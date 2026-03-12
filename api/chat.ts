@@ -1,4 +1,15 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
+import { createClient } from "@supabase/supabase-js";
+import OpenAI from "openai";
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
+});
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 
@@ -14,16 +25,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "Message required" });
     }
 
-    const finalAnswer = `SLP stands for Sustainable Livelihood Program of the Department of Social Welfare and Development (DSWD). It aims to improve the socio-economic conditions of poor households through microenterprise and employment support.`;
-
-    return res.status(200).json({
-      answer: finalAnswer
+    // Generate embedding for user query
+    const queryEmbedding = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: message,
     });
 
-  } catch (error) {
+    // Retrieve documents from database
+    const { data: docs } = await supabase
+      .from("documents")
+      .select("content_text")
+      .limit(5);
+
+    const context = docs
+      ?.map((d) => d.content_text)
+      .join("\n\n")
+      .slice(0, 8000);
+
+    // Ask AI using retrieved context
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are an expert assistant for the Sustainable Livelihood Program (SLP). Answer using the provided guideline documents.",
+        },
+        {
+          role: "user",
+          content: `Context:\n${context}\n\nQuestion:\n${message}`,
+        },
+      ],
+    });
+
+    const answer = completion.choices[0].message.content;
+
+    return res.status(200).json({
+      answer,
+    });
+
+  } catch (err) {
+
+    console.error(err);
 
     return res.status(500).json({
-      error: "Chat processing failed"
+      error: "Chat processing failed",
     });
 
   }
