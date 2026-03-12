@@ -136,7 +136,7 @@ If the user asks for a specific document or form, help them locate it. If they a
 
     // Save message to chat history if sessionId provided (non-blocking)
     if (sessionId) {
-      supabase.from("chat_messages").insert([
+      void supabase.from("chat_messages").insert([
         {
           session_id: sessionId,
           role: "user",
@@ -147,16 +147,16 @@ If the user asks for a specific document or form, help them locate it. If they a
           role: "assistant",
           content: assistantMessage,
         },
-      ]).catch((err: any) => console.error("Error saving chat messages:", err));
+      ]);
     }
 
     // Log the chat (non-blocking)
-    supabase.from("chat_logs").insert({
+    void supabase.from("chat_logs").insert({
       user_id: userId,
       message,
       response: assistantMessage,
       tokens_used: completion.usage?.total_tokens || 0,
-    }).catch((err: any) => console.error("Error logging chat:", err));
+    });
 
     return res.status(200).json({
       answer: assistantMessage,
