@@ -136,13 +136,13 @@ If the user asks for a specific document or form, help them locate it. If they a
     });
 
     return res.status(200).json({
-      message: assistantMessage,
-      sourceDocs: sourceDocs || [],
+      answer: assistantMessage,
+      sources: sourceDocs || [],
       matchedChunks: matchedChunks?.length || 0,
       tokensUsed: completion.usage?.total_tokens || 0,
     });
   } catch (error: any) {
     console.error("Error:", error);
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message || "Internal server error" });
   }
 }
