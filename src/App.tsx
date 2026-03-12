@@ -427,9 +427,9 @@ export default function App() {
         <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
           <div className="max-w-7xl mx-auto w-full">
             {activeTab === 'chat' && <ChatView profile={profile} user={user} />}
-            {activeTab === 'docs' && <DocsView role={profile?.role || (user?.email === 'marvitoriolopez30@gmail.com' ? 'admin' : 'user')} />}
+            {activeTab === 'docs' && <DocsView role={profile?.role || (user?.email === 'marvitoriolopez30@gmail.com' ? 'admin' : 'user')} user={user} />}
             {activeTab === 'beneficiaries' && <BeneficiaryView />}
-            {activeTab === 'admin' && (profile?.role === 'admin' || user?.email === 'marvitoriolopez30@gmail.com') && <AdminView />}
+            {activeTab === 'admin' && (profile?.role === 'admin' || user?.email === 'marvitoriolopez30@gmail.com') && <AdminView user={user} />}
           </div>
         </div>
 
@@ -587,7 +587,7 @@ function ChatView({ profile, user }: { profile: Profile | null, user: any }) {
   );
 }
 
-function DocsView({ role }: { role?: string }) {
+function DocsView({ role, user }: { role?: string, user?: any }) {
   const [docs, setDocs] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFolder, setSelectedFolder] = useState<string | 'ALL'>('ALL');
@@ -997,7 +997,7 @@ function BeneficiaryView() {
   );
 }
 
-function AdminView() {
+function AdminView({ user }: { user?: any }) {
   const [users, setUsers] = useState<Profile[]>([]);
   const [docs, setDocs] = useState<Document[]>([]);
   const [activeSubTab, setActiveSubTab] = useState<'users' | 'files' | 'stats' | 'beneficiaries' | 'health'>('users');
