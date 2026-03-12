@@ -444,7 +444,7 @@ function ChatView() {
       const data = await response.json();
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: data.response,
+        content: data.answer,
         sources: data.sources
       }]);
     } catch (error) {
