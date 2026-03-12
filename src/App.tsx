@@ -469,7 +469,7 @@ function ChatView() {
             )}
           >
             <div className={cn(
-              "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm",
+              "w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm",
               msg.role === 'user' ? "bg-slate-800 text-white" : "bg-emerald-600 text-white"
             )}>
               {msg.role === 'user' ? <Users size={16} /> : <BarChart3 size={16} />}
@@ -502,7 +502,7 @@ function ChatView() {
         ))}
         {isTyping && (
           <div className="flex gap-4">
-            <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 animate-pulse">
+            <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 animate-pulse">
               <BarChart3 size={16} />
             </div>
             <div className="bg-white border border-emerald-100 rounded-2xl px-4 py-3 shadow-sm">
