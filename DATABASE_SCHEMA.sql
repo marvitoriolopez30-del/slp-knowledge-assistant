@@ -113,19 +113,19 @@ ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 
 -- Profiles policies
 CREATE POLICY "Users can view their own profile" ON profiles
-  FOR SELECT USING (auth.uid()::text = id::text);
+  FOR SELECT USING (auth.uid()::uuid = id);
 
 CREATE POLICY "Users can update their own profile" ON profiles
-  FOR UPDATE USING (auth.uid()::text = id::text);
+  FOR UPDATE USING (auth.uid()::uuid = id);
 
 CREATE POLICY "Admins can view all profiles" ON profiles
   FOR SELECT USING (
-    (SELECT role FROM profiles WHERE id::text = auth.uid()) = 'admin'
+    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin'
   );
 
 CREATE POLICY "Admins can update profiles" ON profiles
   FOR UPDATE USING (
-    (SELECT role FROM profiles WHERE id::text = auth.uid()) = 'admin'
+    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin'
   );
 
 -- Documents policies
@@ -134,12 +134,12 @@ CREATE POLICY "Users can view documents" ON documents
 
 CREATE POLICY "Admins can insert documents" ON documents
   FOR INSERT WITH CHECK (
-    (SELECT role FROM profiles WHERE id::text = auth.uid()) = 'admin'
+    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin'
   );
 
 CREATE POLICY "Admins can delete their documents" ON documents
   FOR DELETE USING (
-    (SELECT role FROM profiles WHERE id::text = auth.uid()) = 'admin' OR uploaded_by::text = auth.uid()
+    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin' OR uploaded_by = auth.uid()::uuid
   );
 
 -- Document chunks policies
@@ -148,7 +148,7 @@ CREATE POLICY "Users can view chunks" ON document_chunks
 
 CREATE POLICY "Admins can insert chunks" ON document_chunks
   FOR INSERT WITH CHECK (
-    (SELECT role FROM profiles WHERE id::text = auth.uid()) = 'admin'
+    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin'
   );
 
 -- Embeddings policies
@@ -157,21 +157,21 @@ CREATE POLICY "Users can view embeddings" ON document_embeddings
 
 CREATE POLICY "Admins can insert embeddings" ON document_embeddings
   FOR INSERT WITH CHECK (
-    (SELECT role FROM profiles WHERE id::text = auth.uid()) = 'admin'
+    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin'
   );
 
 -- Chat sessions policies
 CREATE POLICY "Users can view their sessions" ON chat_sessions
-  FOR SELECT USING (user_id::text = auth.uid());
+  FOR SELECT USING (user_id = auth.uid()::uuid);
 
 CREATE POLICY "Users can create sessions" ON chat_sessions
-  FOR INSERT WITH CHECK (user_id::text = auth.uid());
+  FOR INSERT WITH CHECK (user_id = auth.uid()::uuid);
 
 CREATE POLICY "Users can update their sessions" ON chat_sessions
-  FOR UPDATE USING (user_id::text = auth.uid());
+  FOR UPDATE USING (user_id = auth.uid()::uuid);
 
 CREATE POLICY "Users can delete their sessions" ON chat_sessions
-  FOR DELETE USING (user_id::text = auth.uid());
+  FOR DELETE USING (user_id = auth.uid()::uuid);
 
 -- Chat messages policies
 CREATE POLICY "Users can view session messages" ON chat_messages
@@ -179,7 +179,7 @@ CREATE POLICY "Users can view session messages" ON chat_messages
     EXISTS (
       SELECT 1 FROM chat_sessions 
       WHERE chat_sessions.id = chat_messages.session_id 
-      AND chat_sessions.user_id::text = auth.uid()
+      AND chat_sessions.user_id = auth.uid()::uuid
     )
   );
 
@@ -188,11 +188,13 @@ CREATE POLICY "Users can insert messages" ON chat_messages
     EXISTS (
       SELECT 1 FROM chat_sessions 
       WHERE chat_sessions.id = chat_messages.session_id 
-      AND chat_sessions.user_id::text = auth.uid()
+      AND chat_sessions.user_id = auth.uid()::uuid
     )
   );
 
 -- Function to match documents by similarity
+DROP FUNCTION IF EXISTS match_documents(vector, float, int);
+
 CREATE OR REPLACE FUNCTION match_documents(
   query_embedding vector(1536),
   match_threshold float DEFAULT 0.3,
@@ -254,11 +256,11 @@ CREATE POLICY "Public can read knowledge bucket" ON storage.objects
 CREATE POLICY "Admins can upload to knowledge bucket" ON storage.objects
   FOR INSERT WITH CHECK (
     bucket_id = 'knowledge' AND
-    (SELECT role FROM profiles WHERE id::text = auth.uid()) = 'admin'
+    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin'
   );
 
 CREATE POLICY "Admins can delete from knowledge bucket" ON storage.objects
   FOR DELETE USING (
     bucket_id = 'knowledge' AND
-    (SELECT role FROM profiles WHERE id::text = auth.uid()) = 'admin'
+    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin'
   );
