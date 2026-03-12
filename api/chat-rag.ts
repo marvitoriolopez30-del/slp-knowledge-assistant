@@ -2,21 +2,28 @@ import { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
+    // Validate environment variables
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.OPENAI_API_KEY) {
+      console.error("Missing environment variables");
+      return res.status(500).json({ 
+        error: "Server configuration error: Missing required environment variables" 
+      });
+    }
+
+    const supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
     const { userId, sessionId, message, history = [] } = req.body;
 
     if (!userId || !message) {
@@ -35,11 +42,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 1. Generate embedding for the user's message
-    const embeddingResponse = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: message,
-    });
-    const queryEmbedding = embeddingResponse.data[0].embedding;
+    let queryEmbedding;
+    try {
+      const embeddingResponse = await openai.embeddings.create({
+        model: "text-embedding-3-small",
+        input: message,
+      });
+      queryEmbedding = embeddingResponse.data[0].embedding;
+    } catch (embeddingError: any) {
+      console.error("Error creating embedding:", embeddingError);
+      return res.status(500).json({ 
+        error: "Failed to process message. Please try again." 
+      });
+    }
 
     // 2. Vector search for relevant documents using RPC
     const { data: matchedChunks, error: matchError } = await supabase.rpc(
@@ -97,23 +112,31 @@ If the user asks for a specific document or form, help them locate it. If they a
       { role: "user" as const, content: message },
     ];
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...messages,
-      ],
-      temperature: 0.7,
-      max_tokens: 1500,
-    });
+    let completion;
+    try {
+      completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...messages,
+        ],
+        temperature: 0.7,
+        max_tokens: 1500,
+      });
+    } catch (chatError: any) {
+      console.error("Error creating chat completion:", chatError);
+      return res.status(500).json({ 
+        error: "Failed to generate response. Please try again." 
+      });
+    }
 
     const assistantMessage =
       completion.choices[0]?.message?.content ||
       "I encountered an error generating a response.";
 
-    // Save message to chat history if sessionId provided
+    // Save message to chat history if sessionId provided (non-blocking)
     if (sessionId) {
-      await supabase.from("chat_messages").insert([
+      supabase.from("chat_messages").insert([
         {
           session_id: sessionId,
           role: "user",
@@ -124,16 +147,16 @@ If the user asks for a specific document or form, help them locate it. If they a
           role: "assistant",
           content: assistantMessage,
         },
-      ]);
+      ]).catch(err => console.error("Error saving chat messages:", err));
     }
 
-    // Log the chat
-    await supabase.from("chat_logs").insert({
+    // Log the chat (non-blocking)
+    supabase.from("chat_logs").insert({
       user_id: userId,
       message,
       response: assistantMessage,
       tokens_used: completion.usage?.total_tokens || 0,
-    });
+    }).catch(err => console.error("Error logging chat:", err));
 
     return res.status(200).json({
       answer: assistantMessage,
@@ -142,7 +165,10 @@ If the user asks for a specific document or form, help them locate it. If they a
       tokensUsed: completion.usage?.total_tokens || 0,
     });
   } catch (error: any) {
-    console.error("Error:", error);
-    return res.status(500).json({ error: error.message || "Internal server error" });
+    console.error("Chat API Error:", error);
+    // Always return JSON, never HTML
+    return res.status(500).json({ 
+      error: error?.message || "Internal server error. Please check console logs." 
+    });
   }
 }
