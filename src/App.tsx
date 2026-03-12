@@ -426,7 +426,7 @@ export default function App() {
 
         <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
           <div className="max-w-7xl mx-auto w-full">
-            {activeTab === 'chat' && <ChatView />}
+            {activeTab === 'chat' && <ChatView profile={profile} user={user} />}
             {activeTab === 'docs' && <DocsView role={profile?.role || (user?.email === 'marvitoriolopez30@gmail.com' ? 'admin' : 'user')} />}
             {activeTab === 'beneficiaries' && <BeneficiaryView />}
             {activeTab === 'admin' && (profile?.role === 'admin' || user?.email === 'marvitoriolopez30@gmail.com') && <AdminView />}
@@ -443,11 +443,12 @@ export default function App() {
 
 // --- Views ---
 
-function ChatView() {
+function ChatView({ profile, user }: { profile: Profile | null, user: any }) {
   const [messages, setMessages] = useState<any[]>([
     { role: 'assistant', content: 'Hello! I am your SLP Knowledge Assistant. How can I help you today? I can answer questions about policies, retrieve templates, or analyze SLP guidelines.' }
   ]);
   const [input, setInput] = useState('');
+  const [currentSessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
