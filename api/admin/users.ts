@@ -14,7 +14,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const { data, error, count } = await supabase
         .from("profiles")
-        .select("*", { count: "exact" })
+        .select("id, email, full_name, role, status, created_at, updated_at", { count: "exact" })
         .eq("status", status)
         .range(Number(offset), Number(offset) + Number(limit) - 1)
         .order("created_at", { ascending: false });

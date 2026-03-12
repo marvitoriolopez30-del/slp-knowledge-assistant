@@ -147,9 +147,13 @@ export default function App() {
   const fetchProfile = async (authUser: any) => {
     let { data, error } = await supabase
       .from('profiles')
-      .select('*')
+      .select('id, email, full_name, role, status, created_at, updated_at')
       .eq('id', authUser.id)
       .single();
+    
+    if (error) {
+      console.error('Profile fetch error:', error);
+    }
     
     // Auto-upgrade Master Admin if needed
     const isMasterAdmin = authUser.email === 'marvitoriolopez30@gmail.com';
@@ -173,7 +177,8 @@ export default function App() {
         role: 'admin',
         status: 'approved',
         full_name: 'Master Admin',
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       } as Profile;
     }
 
@@ -189,11 +194,13 @@ export default function App() {
   useEffect(() => {
     if (profile?.role === 'admin' || user?.email === 'marvitoriolopez30@gmail.com') {
       const fetchPendingCount = async () => {
-        const { count } = await supabase
+        const { count, error } = await supabase
           .from('profiles')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact' })
           .eq('status', 'pending');
-        setPendingUsersCount(count || 0);
+        if (!error) {
+          setPendingUsersCount(count || 0);
+        }
       };
       
       fetchPendingCount();
@@ -991,9 +998,13 @@ function AdminView() {
   };
 
   const fetchAdminData = async () => {
-    const { data: userData } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-    const { data: docData } = await supabase.from('documents').select('*').order('created_at', { ascending: false });
-    const { data: benData } = await supabase.from('beneficiaries').select('*').order('name', { ascending: true });
+    const { data: userData, error: userError } = await supabase.from('profiles').select('id, email, full_name, role, status, created_at, updated_at').order('created_at', { ascending: false });
+    const { data: docData, error: docError } = await supabase.from('documents').select('id, file_name, folder, file_url, file_size, file_type, uploaded_by, created_at, updated_at').order('created_at', { ascending: false });
+    const { data: benData, error: benError } = await supabase.from('beneficiaries').select('id, name, status, region, municipality, barangay, contact_info, created_at, updated_at').order('name', { ascending: true });
+    
+    if (userError) console.error('Error fetching users:', userError);
+    if (docError) console.error('Error fetching documents:', docError);
+    if (benError) console.error('Error fetching beneficiaries:', benError);
     
     // Sort users so pending ones are at the top
     const sortedUsers = (userData || []).sort((a, b) => {
