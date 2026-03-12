@@ -458,6 +458,10 @@ function ChatView() {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isTyping) return;
+    if (!profile?.id) {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Please sign in to use the chat.' }]);
+      return;
+    }
 
     const userMsg = { role: 'user', content: input };
     setMessages(prev => [...prev, userMsg]);
@@ -469,22 +473,27 @@ function ChatView() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          userId: profile?.id,
+          userId: profile.id,
           sessionId: currentSessionId,
           message: input,
-          history: messages.slice(-5) // Send last 5 messages for context
+          history: messages.slice(-5)
         })
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to get response');
+      }
 
       const data = await response.json();
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: data.answer,
+        content: data.answer || 'No answer available.',
         sources: data.sources
       }]);
     } catch (error) {
       console.error('Chat error:', error);
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I encountered an error processing your request.' }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }]);
     } finally {
       setIsTyping(false);
     }
@@ -662,6 +671,24 @@ function DocsView({ role }: { role?: string }) {
     }
   };
 
+  const handleDeleteDoc = async (docId: string, fileName: string) => {
+    if (!confirm(`Delete "${fileName}"?`)) return;
+    
+    try {
+      const { error } = await supabase
+        .from('documents')
+        .delete()
+        .eq('id', docId);
+      
+      if (error) throw error;
+      
+      alert('Document deleted successfully');
+      fetchDocs();
+    } catch (error: any) {
+      alert(`Error deleting document: ${error.message}`);
+    }
+  };
+
   const filteredDocs = docs.filter(d => 
     (selectedFolder === 'ALL' || d.folder === selectedFolder) &&
     (d.file_name.toLowerCase().includes(search.toLowerCase()))
@@ -802,15 +829,27 @@ function DocsView({ role }: { role?: string }) {
                     {new Date(doc.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <a 
-                      href={doc.file_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all"
-                    >
-                      <Download size={14} />
-                      Download
-                    </a>
+                    <div className="flex items-center justify-end gap-2">
+                      <a 
+                        href={doc.file_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all"
+                      >
+                        <Download size={14} />
+                        Download
+                      </a>
+                      {role === 'admin' && (
+                        <button
+                          onClick={() => handleDeleteDoc(doc.id, doc.file_name)}
+                          className="inline-flex items-center gap-2 bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-600 hover:text-white hover:border-red-600 transition-all"
+                          title="Delete document"
+                        >
+                          <Trash2 size={14} />
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               )) : (
