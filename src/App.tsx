@@ -145,47 +145,68 @@ export default function App() {
   }, []);
 
   const fetchProfile = async (authUser: any) => {
-    let { data, error } = await supabase
-      .from('profiles')
-      .select('id, email, full_name, role, status, created_at, updated_at')
-      .eq('id', authUser.id)
-      .single();
-    
-    if (error) {
-      console.error('Profile fetch error:', error);
-    }
-    
-    // Auto-upgrade Master Admin if needed
-    const isMasterAdmin = authUser.email === 'marvitoriolopez30@gmail.com';
-    
-    if (data && isMasterAdmin && (data.role !== 'admin' || data.status !== 'approved')) {
-      const { data: updatedData, error: updateError } = await supabase
+    try {
+      let { data, error } = await supabase
         .from('profiles')
-        .update({ role: 'admin', status: 'approved' })
+        .select('id, email, full_name, role, status, created_at, updated_at')
         .eq('id', authUser.id)
-        .select()
         .single();
       
-      if (!updateError) data = updatedData;
-    }
+      // If profile doesn't exist, create it
+      if (error?.code === 'PGRST116') {
+        const { data: newProfile, error: createError } = await supabase
+          .from('profiles')
+          .insert({
+            id: authUser.id,
+            email: authUser.email,
+            full_name: authUser.email,
+            role: 'user',
+            status: 'pending'
+          })
+          .select()
+          .single();
+        
+        if (!createError) {
+          data = newProfile;
+        } else {
+          console.error('Error creating profile:', createError);
+        }
+      } else if (error) {
+        console.error('Profile fetch error:', error);
+      }
+      
+      // Auto-upgrade Master Admin if needed
+      const isMasterAdmin = authUser.email === 'marvitoriolopez30@gmail.com';
+      
+      if (data && isMasterAdmin && (data.role !== 'admin' || data.status !== 'approved')) {
+        const { data: updatedData, error: updateError } = await supabase
+          .from('profiles')
+          .update({ role: 'admin', status: 'approved' })
+          .eq('id', authUser.id)
+          .select()
+          .single();
+        
+        if (!updateError) data = updatedData;
+      }
 
-    // Fallback for Master Admin if profile fetch failed or is missing
-    if (!data && isMasterAdmin) {
-      data = {
-        id: authUser.id,
-        email: authUser.email,
-        role: 'admin',
-        status: 'approved',
-        full_name: 'Master Admin',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      } as Profile;
-    }
+      // Fallback for Master Admin if profile fetch failed or is missing
+      if (!data && isMasterAdmin) {
+        data = {
+          id: authUser.id,
+          email: authUser.email,
+          role: 'admin',
+          status: 'approved',
+          full_name: 'Master Admin',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        } as Profile;
+      }
 
-    if (error && error.code !== 'PGRST116' && !isMasterAdmin) {
-      console.error('Error fetching profile:', error);
-    } else {
-      setProfile(data);
+      if (data) {
+        setProfile(data);
+      }
+    } catch (err) {
+      console.error('Unexpected error in fetchProfile:', err);
     }
     setLoading(false);
   };
@@ -194,12 +215,17 @@ export default function App() {
   useEffect(() => {
     if (profile?.role === 'admin' || user?.email === 'marvitoriolopez30@gmail.com') {
       const fetchPendingCount = async () => {
-        const { count, error } = await supabase
-          .from('profiles')
-          .select('id', { count: 'exact' })
-          .eq('status', 'pending');
-        if (!error) {
-          setPendingUsersCount(count || 0);
+        try {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('status', 'pending');
+          
+          if (!error && data) {
+            setPendingUsersCount(data.length);
+          }
+        } catch (err) {
+          console.error('Error fetching pending count:', err);
         }
       };
       
