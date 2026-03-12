@@ -112,41 +112,52 @@ ALTER TABLE chat_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 
 -- Profiles policies
+DROP POLICY IF EXISTS "Users can view their own profile" ON profiles;
 CREATE POLICY "Users can view their own profile" ON profiles
   FOR SELECT USING (auth.uid()::uuid = id);
 
+DROP POLICY IF EXISTS "Users can update their own profile" ON profiles;
 CREATE POLICY "Users can update their own profile" ON profiles
   FOR UPDATE USING (auth.uid()::uuid = id);
 
+DROP POLICY IF EXISTS "Enable insert for auth" ON profiles;
 CREATE POLICY "Enable insert for auth" ON profiles
   FOR INSERT WITH CHECK (auth.uid()::uuid = id);
 
 -- Documents policies
+DROP POLICY IF EXISTS "Users can view documents" ON documents;
 CREATE POLICY "Users can view documents" ON documents
   FOR SELECT USING (true);
 
 -- Document chunks policies
+DROP POLICY IF EXISTS "Users can view chunks" ON document_chunks;
 CREATE POLICY "Users can view chunks" ON document_chunks
   FOR SELECT USING (true);
 
 -- Embeddings policies
+DROP POLICY IF EXISTS "Users can view embeddings" ON document_embeddings;
 CREATE POLICY "Users can view embeddings" ON document_embeddings
   FOR SELECT USING (true);
 
 -- Chat sessions policies
+DROP POLICY IF EXISTS "Users can view their sessions" ON chat_sessions;
 CREATE POLICY "Users can view their sessions" ON chat_sessions
   FOR SELECT USING (user_id = auth.uid()::uuid);
 
+DROP POLICY IF EXISTS "Users can create sessions" ON chat_sessions;
 CREATE POLICY "Users can create sessions" ON chat_sessions
   FOR INSERT WITH CHECK (user_id = auth.uid()::uuid);
 
+DROP POLICY IF EXISTS "Users can update their sessions" ON chat_sessions;
 CREATE POLICY "Users can update their sessions" ON chat_sessions
   FOR UPDATE USING (user_id = auth.uid()::uuid);
 
+DROP POLICY IF EXISTS "Users can delete their sessions" ON chat_sessions;
 CREATE POLICY "Users can delete their sessions" ON chat_sessions
   FOR DELETE USING (user_id = auth.uid()::uuid);
 
 -- Chat messages policies
+DROP POLICY IF EXISTS "Users can view session messages" ON chat_messages;
 CREATE POLICY "Users can view session messages" ON chat_messages
   FOR SELECT USING (
     EXISTS (
@@ -156,6 +167,7 @@ CREATE POLICY "Users can view session messages" ON chat_messages
     )
   );
 
+DROP POLICY IF EXISTS "Users can insert messages" ON chat_messages;
 CREATE POLICY "Users can insert messages" ON chat_messages
   FOR INSERT WITH CHECK (
     EXISTS (
@@ -205,14 +217,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS profiles_updated_at ON profiles;
 CREATE TRIGGER profiles_updated_at
 BEFORE UPDATE ON profiles
 FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+DROP TRIGGER IF EXISTS documents_updated_at ON documents;
 CREATE TRIGGER documents_updated_at
 BEFORE UPDATE ON documents
 FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+DROP TRIGGER IF EXISTS chat_sessions_updated_at ON chat_sessions;
 CREATE TRIGGER chat_sessions_updated_at
 BEFORE UPDATE ON chat_sessions
 FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -223,5 +238,6 @@ VALUES ('knowledge', 'knowledge', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- Storage policies
+DROP POLICY IF EXISTS "Public can read knowledge bucket" ON storage.objects;
 CREATE POLICY "Public can read knowledge bucket" ON storage.objects
   FOR SELECT USING (bucket_id = 'knowledge');
