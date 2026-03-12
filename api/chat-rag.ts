@@ -147,7 +147,7 @@ If the user asks for a specific document or form, help them locate it. If they a
           role: "assistant",
           content: assistantMessage,
         },
-      ]).catch(err => console.error("Error saving chat messages:", err));
+      ]).then(() => {}).catch((err: any) => console.error("Error saving chat messages:", err));
     }
 
     // Log the chat (non-blocking)
@@ -156,7 +156,7 @@ If the user asks for a specific document or form, help them locate it. If they a
       message,
       response: assistantMessage,
       tokens_used: completion.usage?.total_tokens || 0,
-    }).catch(err => console.error("Error logging chat:", err));
+    }).then(() => {}).catch((err: any) => console.error("Error logging chat:", err));
 
     return res.status(200).json({
       answer: assistantMessage,
