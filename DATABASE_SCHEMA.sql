@@ -71,8 +71,6 @@ CREATE TABLE IF NOT EXISTS chat_logs (
   tokens_used INTEGER,
   created_at TIMESTAMP DEFAULT NOW()
 );
-
--- Chat sessions
 CREATE TABLE IF NOT EXISTS chat_sessions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -124,20 +122,40 @@ DROP POLICY IF EXISTS "Enable insert for auth" ON profiles;
 CREATE POLICY "Enable insert for auth" ON profiles
   FOR INSERT WITH CHECK (auth.uid()::uuid = id);
 
+DROP POLICY IF EXISTS "Authenticated users can view profiles" ON profiles;
+CREATE POLICY "Authenticated users can view profiles" ON profiles
+  FOR SELECT USING (auth.uid()::uuid IS NOT NULL);
+
 -- Documents policies
 DROP POLICY IF EXISTS "Users can view documents" ON documents;
 CREATE POLICY "Users can view documents" ON documents
   FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Authenticated users can insert documents" ON documents;
+CREATE POLICY "Authenticated users can insert documents" ON documents
+  FOR INSERT WITH CHECK (auth.uid()::uuid IS NOT NULL);
+
+DROP POLICY IF EXISTS "Users can delete own documents" ON documents;
+CREATE POLICY "Users can delete own documents" ON documents
+  FOR DELETE USING (uploaded_by = auth.uid()::uuid OR auth.uid()::uuid IS NOT NULL);
 
 -- Document chunks policies
 DROP POLICY IF EXISTS "Users can view chunks" ON document_chunks;
 CREATE POLICY "Users can view chunks" ON document_chunks
   FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Authenticated users can insert chunks" ON document_chunks;
+CREATE POLICY "Authenticated users can insert chunks" ON document_chunks
+  FOR INSERT WITH CHECK (auth.uid()::uuid IS NOT NULL);
+
 -- Embeddings policies
 DROP POLICY IF EXISTS "Users can view embeddings" ON document_embeddings;
 CREATE POLICY "Users can view embeddings" ON document_embeddings
   FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Authenticated users can insert embeddings" ON document_embeddings;
+CREATE POLICY "Authenticated users can insert embeddings" ON document_embeddings
+  FOR INSERT WITH CHECK (auth.uid()::uuid IS NOT NULL);
 
 -- Chat sessions policies
 DROP POLICY IF EXISTS "Users can view their sessions" ON chat_sessions;
@@ -155,6 +173,15 @@ CREATE POLICY "Users can update their sessions" ON chat_sessions
 DROP POLICY IF EXISTS "Users can delete their sessions" ON chat_sessions;
 CREATE POLICY "Users can delete their sessions" ON chat_sessions
   FOR DELETE USING (user_id = auth.uid()::uuid);
+
+-- Chat logs policies
+DROP POLICY IF EXISTS "Users can insert their chat logs" ON chat_logs;
+CREATE POLICY "Users can insert their chat logs" ON chat_logs
+  FOR INSERT WITH CHECK (user_id = auth.uid()::uuid);
+
+DROP POLICY IF EXISTS "Users can view their chat logs" ON chat_logs;
+CREATE POLICY "Users can view their chat logs" ON chat_logs
+  FOR SELECT USING (user_id = auth.uid()::uuid);
 
 -- Chat messages policies
 DROP POLICY IF EXISTS "Users can view session messages" ON chat_messages;
@@ -241,3 +268,11 @@ ON CONFLICT (id) DO NOTHING;
 DROP POLICY IF EXISTS "Public can read knowledge bucket" ON storage.objects;
 CREATE POLICY "Public can read knowledge bucket" ON storage.objects
   FOR SELECT USING (bucket_id = 'knowledge');
+
+DROP POLICY IF EXISTS "Authenticated users can upload to knowledge" ON storage.objects;
+CREATE POLICY "Authenticated users can upload to knowledge" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'knowledge' AND auth.uid()::uuid IS NOT NULL);
+
+DROP POLICY IF EXISTS "Authenticated users can delete from knowledge" ON storage.objects;
+CREATE POLICY "Authenticated users can delete from knowledge" ON storage.objects
+  FOR DELETE USING (bucket_id = 'knowledge' AND auth.uid()::uuid IS NOT NULL);
