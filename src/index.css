@@ -1,0 +1,39 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  @apply font-sans text-slate-900 antialiased;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 rounded-full hover:bg-slate-300 transition-colors;
+}
+
+.prose pre {
+  @apply bg-slate-900 text-slate-100 p-4 rounded-xl overflow-x-auto my-4;
+}
+
+.prose table {
+  @apply w-full text-sm border-collapse my-4;
+}
+
+.prose th {
+  @apply bg-slate-50 border border-slate-200 px-4 py-2 text-left font-bold;
+}
+
+.prose td {
+  @apply border border-slate-200 px-4 py-2;
+}

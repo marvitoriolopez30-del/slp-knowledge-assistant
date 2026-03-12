@@ -1,0 +1,8 @@
+{
+  "name": "SLP Knowledge Assistant",
+  "description": "AI-powered knowledge management chatbot for the Sustainable Livelihood Program (SLP), featuring RAG-based document analysis, beneficiary name matching, and administrative controls.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
