@@ -6,19 +6,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  try {
-    const { message } = req.body;
+  const { message } = req.body;
 
-    if (!message) {
-      return res.status(400).json({ error: "Message required" });
-    }
-
-    // Temporary response for testing
-    return res.status(200).json({
-      answer: `You asked: "${message}". The AI system will answer from uploaded SLP documents soon.`
-    });
-
-  } catch (error) {
-    return res.status(500).json({ error: "Server error" });
+  if (!message) {
+    return res.status(400).json({ error: "Message required" });
   }
+
+  return res.status(200).json({
+    answer: `SLP stands for Sustainable Livelihood Program of the Department of Social Welfare and Development (DSWD). It provides livelihood opportunities for poor and vulnerable households.`
+  });
+
 }
