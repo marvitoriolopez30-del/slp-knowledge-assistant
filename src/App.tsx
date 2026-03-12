@@ -641,7 +641,7 @@ function DocsView({ role }: { role?: string }) {
             file_name: file.name,
             file_url: publicUrl,
             folder: folder,
-            content_text: '' // Will be processed by server
+            uploaded_by: user?.id
           })
           .select()
           .single();
