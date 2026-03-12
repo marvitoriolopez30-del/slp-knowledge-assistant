@@ -1,7 +1,7 @@
 {
-  "version": 2,
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/server.ts" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
+  "functions": {
+    "api/index.ts": {
+      "runtime": "nodejs18.x"
+    }
+  }
 }
