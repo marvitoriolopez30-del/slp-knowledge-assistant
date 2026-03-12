@@ -465,10 +465,12 @@ function ChatView() {
     setIsTyping(true);
 
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/chat-rag', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
+          userId: profile?.id,
+          sessionId: currentSessionId,
           message: input,
           history: messages.slice(-5) // Send last 5 messages for context
         })
