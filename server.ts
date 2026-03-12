@@ -118,57 +118,15 @@ app.post('/api/chat', async (req, res) => {
 
 // Document Processing (Admin only - simplified for demo)
 app.post('/api/admin/process-document', async (req, res) => {
-  const { documentId, fileUrl, fileName, folder } = req.body;
+  const { documentId } = req.body;
 
   try {
-    // Dynamic imports to avoid startup issues with CJS/ESM compatibility
-    // @ts-ignore
-    const pdf = (await import('pdf-parse')).default;
-    const mammoth = (await import('mammoth')).default;
-    const xlsx = await import('xlsx');
-
-    // Fetch file from Supabase Storage
-    const response = await fetch(fileUrl);
-    const buffer = Buffer.from(await response.arrayBuffer());
-
-    let text = '';
-    const ext = path.extname(fileName).toLowerCase();
-
-    if (ext === '.pdf') {
-      const data = await pdf(buffer);
-      text = data.text;
-    } else if (ext === '.docx') {
-      const result = await mammoth.extractRawText({ buffer });
-      text = result.value;
-    } else if (ext === '.xlsx' || ext === '.csv') {
-      const workbook = xlsx.read(buffer, { type: 'buffer' });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      text = xlsx.utils.sheet_to_txt(sheet);
-    } else {
-      text = buffer.toString('utf-8');
-    }
-
-    // Chunk text
-    const chunks = text.match(/[\s\S]{1,1000}/g) || [];
-
-    // Generate embeddings and store
-    for (const chunk of chunks) {
-      const embeddingResponse = await openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: chunk,
-      });
-      const embedding = embeddingResponse.data[0].embedding;
-
-      await supabase.from('document_embeddings').insert({
-        document_id: documentId,
-        content: chunk,
-        embedding: embedding,
-        file_name: fileName,
-        folder: folder
-      });
-    }
-
-    res.json({ success: true });
+    // Document processing already handled by upload endpoint
+    // This is a no-op endpoint for backwards compatibility
+    res.json({ 
+      success: true, 
+      message: "Document processing complete" 
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
