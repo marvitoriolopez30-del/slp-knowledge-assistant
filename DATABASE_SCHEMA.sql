@@ -118,47 +118,20 @@ CREATE POLICY "Users can view their own profile" ON profiles
 CREATE POLICY "Users can update their own profile" ON profiles
   FOR UPDATE USING (auth.uid()::uuid = id);
 
-CREATE POLICY "Admins can view all profiles" ON profiles
-  FOR SELECT USING (
-    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin'
-  );
-
-CREATE POLICY "Admins can update profiles" ON profiles
-  FOR UPDATE USING (
-    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin'
-  );
+CREATE POLICY "Enable insert for auth" ON profiles
+  FOR INSERT WITH CHECK (auth.uid()::uuid = id);
 
 -- Documents policies
 CREATE POLICY "Users can view documents" ON documents
   FOR SELECT USING (true);
 
-CREATE POLICY "Admins can insert documents" ON documents
-  FOR INSERT WITH CHECK (
-    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin'
-  );
-
-CREATE POLICY "Admins can delete their documents" ON documents
-  FOR DELETE USING (
-    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin' OR uploaded_by = auth.uid()::uuid
-  );
-
 -- Document chunks policies
 CREATE POLICY "Users can view chunks" ON document_chunks
   FOR SELECT USING (true);
 
-CREATE POLICY "Admins can insert chunks" ON document_chunks
-  FOR INSERT WITH CHECK (
-    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin'
-  );
-
 -- Embeddings policies
 CREATE POLICY "Users can view embeddings" ON document_embeddings
   FOR SELECT USING (true);
-
-CREATE POLICY "Admins can insert embeddings" ON document_embeddings
-  FOR INSERT WITH CHECK (
-    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin'
-  );
 
 -- Chat sessions policies
 CREATE POLICY "Users can view their sessions" ON chat_sessions
@@ -252,15 +225,3 @@ ON CONFLICT (id) DO NOTHING;
 -- Storage policies
 CREATE POLICY "Public can read knowledge bucket" ON storage.objects
   FOR SELECT USING (bucket_id = 'knowledge');
-
-CREATE POLICY "Admins can upload to knowledge bucket" ON storage.objects
-  FOR INSERT WITH CHECK (
-    bucket_id = 'knowledge' AND
-    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin'
-  );
-
-CREATE POLICY "Admins can delete from knowledge bucket" ON storage.objects
-  FOR DELETE USING (
-    bucket_id = 'knowledge' AND
-    (SELECT role FROM profiles WHERE id = auth.uid()::uuid) = 'admin'
-  );
