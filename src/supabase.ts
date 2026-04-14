@@ -1,9 +1,20 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const isSupabaseConfigured =
+  !!supabaseUrl &&
+  !!supabaseAnonKey &&
+  supabaseUrl.startsWith('https://') &&
+  !supabaseUrl.includes('placeholder') &&
+  !supabaseUrl.includes('YOUR_SUPABASE_URL') &&
+  supabaseUrl.length > 20;
+
+export const supabase = createClient(
+  isSupabaseConfigured ? supabaseUrl : 'https://placeholder-project.supabase.co',
+  isSupabaseConfigured ? supabaseAnonKey : 'placeholder-key'
+);
 
 export type UserRole = 'admin' | 'user';
 export type UserStatus = 'pending' | 'approved' | 'rejected';
@@ -11,11 +22,10 @@ export type UserStatus = 'pending' | 'approved' | 'rejected';
 export interface Profile {
   id: string;
   email: string;
-  full_name: string;
+  full_name?: string;
   role: UserRole;
   status: UserStatus;
   created_at: string;
-  updated_at: string;
 }
 
 export interface Document {
