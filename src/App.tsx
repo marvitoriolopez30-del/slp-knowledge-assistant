@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase, Profile, Document, FOLDERS, UserStatus, UserRole } from './supabase';
+import { supabase, Profile, Document, FOLDERS, UserStatus, UserRole, isSupabaseConfigured } from './supabase';
 import { 
   MessageSquare, 
   FileText, 
@@ -42,12 +42,16 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const MASTER_ADMIN_EMAIL = 'mvltorio@dswd.gov.ph';
+
 const handleUploadError = (err: any) => {
   console.error('Upload error:', err);
   let message = err.message || 'An unknown error occurred.';
   
   if (message.includes('Bucket not found')) {
     message = 'STORAGE ERROR: The "knowledge" bucket is missing in your Supabase project. \n\nFIX: \n1. Go to your Supabase Dashboard -> Storage.\n2. Click "New Bucket".\n3. Name it exactly "knowledge".\n4. Set it to "Public" (so users can view documents).\n5. Click "Save".';
+  } else if (message.includes('Failed to fetch')) {
+    message = 'CONNECTION ERROR: Failed to reach the server. \n\nTROUBLESHOOTING:\n1. Check your internet connection.\n2. Verify your Supabase URL starts with "https://".\n3. Ensure your Supabase project is not paused.';
   }
   
   alert(message);
@@ -145,88 +149,59 @@ export default function App() {
   }, []);
 
   const fetchProfile = async (authUser: any) => {
-    try {
-      let { data, error } = await supabase
+    let { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', authUser.id)
+      .single();
+    
+    // Auto-upgrade Master Admin if needed
+    const isMasterAdmin = authUser.email === MASTER_ADMIN_EMAIL;
+    
+    if (data && isMasterAdmin && (data.role !== 'admin' || data.status !== 'approved')) {
+      const { data: updatedData, error: updateError } = await supabase
         .from('profiles')
-        .select('id, email, full_name, role, status, created_at, updated_at')
+        .update({ role: 'admin', status: 'approved' })
         .eq('id', authUser.id)
+        .select()
         .single();
       
-      // If profile doesn't exist, create it
-      if (error?.code === 'PGRST116') {
-        const { data: newProfile, error: createError } = await supabase
-          .from('profiles')
-          .insert({
-            id: authUser.id,
-            email: authUser.email,
-            full_name: authUser.email,
-            role: 'user',
-            status: 'pending'
-          })
-          .select()
-          .single();
-        
-        if (!createError) {
-          data = newProfile;
-        } else {
-          console.error('Error creating profile:', createError);
-        }
-      } else if (error) {
-        console.error('Profile fetch error:', error);
-      }
-      
-      // Auto-upgrade Master Admin if needed
-      const isMasterAdmin = authUser.email === 'marvitoriolopez30@gmail.com';
-      
-      if (data && isMasterAdmin && (data.role !== 'admin' || data.status !== 'approved')) {
-        const { data: updatedData, error: updateError } = await supabase
-          .from('profiles')
-          .update({ role: 'admin', status: 'approved' })
-          .eq('id', authUser.id)
-          .select()
-          .single();
-        
-        if (!updateError) data = updatedData;
-      }
+      if (!updateError) data = updatedData;
+    }
 
-      // Fallback for Master Admin if profile fetch failed or is missing
-      if (!data && isMasterAdmin) {
-        data = {
-          id: authUser.id,
-          email: authUser.email,
-          role: 'admin',
-          status: 'approved',
-          full_name: 'Master Admin',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        } as Profile;
-      }
+    // Fallback for Master Admin if profile fetch failed or is missing
+    if (!data && isMasterAdmin) {
+      data = {
+        id: authUser.id,
+        email: authUser.email,
+        role: 'admin',
+        status: 'approved',
+        full_name: 'Master Admin',
+        created_at: new Date().toISOString()
+      } as Profile;
+    }
 
-      if (data) {
-        setProfile(data);
+    if (error && error.code !== 'PGRST116' && !isMasterAdmin) {
+      console.error('Error fetching profile:', error);
+      if (error.message.includes('Failed to fetch')) {
+        // This is a connection error, we might want to show it to the user
+        alert('CONNECTION ERROR: Failed to reach Supabase. Please check your internet connection.');
       }
-    } catch (err) {
-      console.error('Unexpected error in fetchProfile:', err);
+    } else {
+      setProfile(data);
     }
     setLoading(false);
   };
 
   // Fetch pending users count for admin badge
   useEffect(() => {
-    if (profile?.role === 'admin' || user?.email === 'marvitoriolopez30@gmail.com') {
+    if (profile?.role === 'admin' || user?.email === MASTER_ADMIN_EMAIL) {
       const fetchPendingCount = async () => {
-        try {
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('status', 'pending');
-          
-          if (!error && data) {
-            setPendingUsersCount(data.length);
-          }
-        } catch (err) {
-          console.error('Error fetching pending count:', err);
-        }
+        const { count } = await supabase
+          .from('profiles')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'pending');
+        setPendingUsersCount(count || 0);
       };
       
       fetchPendingCount();
@@ -249,6 +224,74 @@ export default function App() {
   }, [profile, user]);
 
   const handleSignOut = () => supabase.auth.signOut();
+
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+
+  const testConnection = async () => {
+    setTestStatus('testing');
+    try {
+      const { error } = await supabase.auth.getSession();
+      if (error && error.message.includes('Failed to fetch')) throw error;
+      setTestStatus('success');
+    } catch (err) {
+      console.error('Test connection failed:', err);
+      setTestStatus('error');
+    }
+  };
+
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="min-h-screen bg-emerald-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full text-center">
+          <div className="w-20 h-20 bg-amber-100 text-amber-600 rounded-3xl flex items-center justify-center mx-auto mb-6">
+            <Settings size={40} />
+          </div>
+          <h1 className="text-2xl font-black text-slate-800 mb-2">Configuration Required</h1>
+          <p className="text-slate-600 mb-8">
+            Please set your <strong>Supabase URL</strong> and <strong>Anon Key</strong> in the environment variables to start using the SLP Assistant.
+          </p>
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 text-left space-y-4 shadow-xl shadow-emerald-100 mb-6">
+            <div className="space-y-1">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Required Variables</p>
+              <code className="block bg-slate-50 p-3 rounded-lg text-xs text-slate-700 border border-slate-100">
+                VITE_SUPABASE_URL (must start with https://)<br/>
+                VITE_SUPABASE_ANON_KEY
+              </code>
+            </div>
+            <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
+              <p className="text-[10px] font-bold text-blue-800 uppercase mb-1">💡 Troubleshooting Tip:</p>
+              <p className="text-[10px] text-blue-700 leading-relaxed">
+                If you've already set these and still see this screen, try <strong>refreshing the page</strong> or <strong>restarting the dev server</strong> from the settings menu. Ensure there are no extra spaces or quotes around the values.
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={testConnection}
+            disabled={testStatus === 'testing'}
+            className={cn(
+              "w-full py-3 rounded-xl font-bold transition-all shadow-lg",
+              testStatus === 'idle' && "bg-slate-800 text-white hover:bg-slate-700",
+              testStatus === 'testing' && "bg-slate-400 text-white cursor-not-allowed",
+              testStatus === 'success' && "bg-emerald-600 text-white",
+              testStatus === 'error' && "bg-red-600 text-white"
+            )}
+          >
+            {testStatus === 'idle' && 'Test Connection'}
+            {testStatus === 'testing' && 'Testing...'}
+            {testStatus === 'success' && 'Connection Successful! Refreshing...'}
+            {testStatus === 'error' && 'Connection Failed. Check Keys.'}
+          </button>
+          
+          {testStatus === 'success' && (
+            <p className="mt-4 text-xs text-emerald-600 font-bold animate-pulse">
+              Great! Your keys are working. Please refresh the page.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -361,7 +404,7 @@ export default function App() {
                 active={activeTab === 'beneficiaries'} 
                 onClick={() => { setActiveTab('beneficiaries'); if(window.innerWidth < 1024) setIsSidebarOpen(false); }} 
               />
-              {(profile?.role === 'admin' || user?.email === 'marvitoriolopez30@gmail.com') && (
+              {(profile?.role === 'admin' || user?.email === MASTER_ADMIN_EMAIL) && (
                 <SidebarItem 
                   icon={Settings} 
                   label="Admin Panel" 
@@ -378,9 +421,9 @@ export default function App() {
                 <p className="text-sm font-semibold text-slate-700 truncate">{user.email}</p>
                 <p className={cn(
                   "text-[10px] font-bold px-2 py-0.5 rounded-full inline-block mt-2",
-                  (profile?.role === 'admin' || user?.email === 'marvitoriolopez30@gmail.com') ? "bg-purple-100 text-purple-700" : "bg-emerald-100 text-emerald-700"
+                  (profile?.role === 'admin' || user?.email === MASTER_ADMIN_EMAIL) ? "bg-purple-100 text-purple-700" : "bg-emerald-100 text-emerald-700"
                 )}>
-                  {(profile?.role || (user?.email === 'marvitoriolopez30@gmail.com' ? 'admin' : 'user')).toUpperCase()}
+                  {(profile?.role || (user?.email === MASTER_ADMIN_EMAIL ? 'admin' : 'user')).toUpperCase()}
                 </p>
               </div>
               <button 
@@ -426,10 +469,10 @@ export default function App() {
 
         <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
           <div className="max-w-7xl mx-auto w-full">
-            {activeTab === 'chat' && <ChatView profile={profile} user={user} />}
-            {activeTab === 'docs' && <DocsView role={profile?.role || (user?.email === 'marvitoriolopez30@gmail.com' ? 'admin' : 'user')} user={user} />}
+            {activeTab === 'chat' && <ChatView />}
+            {activeTab === 'docs' && <DocsView role={profile?.role || (user?.email === MASTER_ADMIN_EMAIL ? 'admin' : 'user')} />}
             {activeTab === 'beneficiaries' && <BeneficiaryView />}
-            {activeTab === 'admin' && (profile?.role === 'admin' || user?.email === 'marvitoriolopez30@gmail.com') && <AdminView user={user} />}
+            {activeTab === 'admin' && (profile?.role === 'admin' || user?.email === MASTER_ADMIN_EMAIL) && <AdminView />}
           </div>
         </div>
 
@@ -443,12 +486,11 @@ export default function App() {
 
 // --- Views ---
 
-function ChatView({ profile, user }: { profile: Profile | null, user: any }) {
+function ChatView() {
   const [messages, setMessages] = useState<any[]>([
     { role: 'assistant', content: 'Hello! I am your SLP Knowledge Assistant. How can I help you today? I can answer questions about policies, retrieve templates, or analyze SLP guidelines.' }
   ]);
   const [input, setInput] = useState('');
-  const [currentSessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -459,10 +501,6 @@ function ChatView({ profile, user }: { profile: Profile | null, user: any }) {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isTyping) return;
-    if (!profile?.id) {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Please sign in to use the chat.' }]);
-      return;
-    }
 
     const userMsg = { role: 'user', content: input };
     setMessages(prev => [...prev, userMsg]);
@@ -470,31 +508,24 @@ function ChatView({ profile, user }: { profile: Profile | null, user: any }) {
     setIsTyping(true);
 
     try {
-      const response = await fetch('/api/chat-rag', {
+      const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          userId: profile.id,
-          sessionId: currentSessionId,
           message: input,
-          history: messages.slice(-5)
+          history: messages.slice(-5) // Send last 5 messages for context
         })
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to get response');
-      }
 
       const data = await response.json();
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: data.answer || 'No answer available.',
+        content: data.response,
         sources: data.sources
       }]);
     } catch (error) {
       console.error('Chat error:', error);
-      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I encountered an error processing your request.' }]);
     } finally {
       setIsTyping(false);
     }
@@ -514,7 +545,7 @@ function ChatView({ profile, user }: { profile: Profile | null, user: any }) {
             )}
           >
             <div className={cn(
-              "w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm",
+              "w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm",
               msg.role === 'user' ? "bg-slate-800 text-white" : "bg-emerald-600 text-white"
             )}>
               {msg.role === 'user' ? <Users size={16} /> : <BarChart3 size={16} />}
@@ -547,7 +578,7 @@ function ChatView({ profile, user }: { profile: Profile | null, user: any }) {
         ))}
         {isTyping && (
           <div className="flex gap-4">
-            <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 animate-pulse">
+            <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 animate-pulse">
               <BarChart3 size={16} />
             </div>
             <div className="bg-white border border-emerald-100 rounded-2xl px-4 py-3 shadow-sm">
@@ -587,7 +618,7 @@ function ChatView({ profile, user }: { profile: Profile | null, user: any }) {
   );
 }
 
-function DocsView({ role, user }: { role?: string, user?: any }) {
+function DocsView({ role }: { role?: string }) {
   const [docs, setDocs] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFolder, setSelectedFolder] = useState<string | 'ALL'>('ALL');
@@ -641,7 +672,7 @@ function DocsView({ role, user }: { role?: string, user?: any }) {
             file_name: file.name,
             file_url: publicUrl,
             folder: folder,
-            uploaded_by: user?.id
+            content_text: '' // Will be processed by server
           })
           .select()
           .single();
@@ -669,24 +700,6 @@ function DocsView({ role, user }: { role?: string, user?: any }) {
       handleUploadError(error);
     } finally {
       setUploading(false);
-    }
-  };
-
-  const handleDeleteDoc = async (docId: string, fileName: string) => {
-    if (!confirm(`Delete "${fileName}"?`)) return;
-    
-    try {
-      const { error } = await supabase
-        .from('documents')
-        .delete()
-        .eq('id', docId);
-      
-      if (error) throw error;
-      
-      alert('Document deleted successfully');
-      fetchDocs();
-    } catch (error: any) {
-      alert(`Error deleting document: ${error.message}`);
     }
   };
 
@@ -830,27 +843,15 @@ function DocsView({ role, user }: { role?: string, user?: any }) {
                     {new Date(doc.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <a 
-                        href={doc.file_url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all"
-                      >
-                        <Download size={14} />
-                        Download
-                      </a>
-                      {role === 'admin' && (
-                        <button
-                          onClick={() => handleDeleteDoc(doc.id, doc.file_name)}
-                          className="inline-flex items-center gap-2 bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-600 hover:text-white hover:border-red-600 transition-all"
-                          title="Delete document"
-                        >
-                          <Trash2 size={14} />
-                          Delete
-                        </button>
-                      )}
-                    </div>
+                    <a 
+                      href={doc.file_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all"
+                    >
+                      <Download size={14} />
+                      Download
+                    </a>
                   </td>
                 </tr>
               )) : (
@@ -997,7 +998,7 @@ function BeneficiaryView() {
   );
 }
 
-function AdminView({ user }: { user?: any }) {
+function AdminView() {
   const [users, setUsers] = useState<Profile[]>([]);
   const [docs, setDocs] = useState<Document[]>([]);
   const [activeSubTab, setActiveSubTab] = useState<'users' | 'files' | 'stats' | 'beneficiaries' | 'health'>('users');
@@ -1012,12 +1013,14 @@ function AdminView({ user }: { user?: any }) {
     documentsTable: boolean;
     beneficiariesTable: boolean;
     knowledgeBucket: boolean;
+    supabaseConnection: boolean;
     checking: boolean;
   }>({
     profilesTable: true,
     documentsTable: true,
     beneficiariesTable: true,
     knowledgeBucket: true,
+    supabaseConnection: true,
     checking: false
   });
 
@@ -1040,6 +1043,10 @@ function AdminView({ user }: { user?: any }) {
   const checkSystemHealth = async () => {
     setHealthStatus(prev => ({ ...prev, checking: true }));
     
+    // Check Supabase Connection
+    const { error: authError } = await supabase.auth.getSession();
+    const sConnection = !authError || !authError.message.includes('Failed to fetch');
+
     // Check Profiles Table
     const { error: pError } = await supabase.from('profiles').select('id').limit(1);
     const pTable = !pError || !pError.message.includes('relation "public.profiles" does not exist');
@@ -1061,18 +1068,15 @@ function AdminView({ user }: { user?: any }) {
       documentsTable: dTable,
       beneficiariesTable: bTable,
       knowledgeBucket: kBucket,
+      supabaseConnection: sConnection,
       checking: false
     });
   };
 
   const fetchAdminData = async () => {
-    const { data: userData, error: userError } = await supabase.from('profiles').select('id, email, full_name, role, status, created_at, updated_at').order('created_at', { ascending: false });
-    const { data: docData, error: docError } = await supabase.from('documents').select('id, file_name, folder, file_url, file_size, file_type, uploaded_by, created_at, updated_at').order('created_at', { ascending: false });
-    const { data: benData, error: benError } = await supabase.from('beneficiaries').select('id, name, status, region, municipality, barangay, contact_info, created_at, updated_at').order('name', { ascending: true });
-    
-    if (userError) console.error('Error fetching users:', userError);
-    if (docError) console.error('Error fetching documents:', docError);
-    if (benError) console.error('Error fetching beneficiaries:', benError);
+    const { data: userData } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+    const { data: docData } = await supabase.from('documents').select('*').order('created_at', { ascending: false });
+    const { data: benData } = await supabase.from('beneficiaries').select('*').order('name', { ascending: true });
     
     // Sort users so pending ones are at the top
     const sortedUsers = (userData || []).sort((a, b) => {
@@ -1311,6 +1315,12 @@ function AdminView({ user }: { user?: any }) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <HealthCard 
+                title="Supabase Connection" 
+                status={healthStatus.supabaseConnection} 
+                description="Verifies the app can reach your Supabase project."
+                fix="Check your internet connection and verify VITE_SUPABASE_URL starts with https://. Ensure your project is not paused."
+              />
               <HealthCard 
                 title="Profiles Table" 
                 status={healthStatus.profilesTable} 
@@ -1908,7 +1918,7 @@ function AuthPage() {
         
         if (data.user) {
           // Bootstrap Admin: Automatically make this specific email an approved admin
-          const isAdmin = email.toLowerCase() === 'marvitoriolopez30@gmail.com';
+          const isAdmin = email.toLowerCase() === MASTER_ADMIN_EMAIL;
           
           const { error: profileError } = await supabase.from('profiles').insert({
             id: data.user.id,
@@ -1941,8 +1951,10 @@ function AuthPage() {
         message = 'This email is already registered. Please switch to the "Login" tab to sign in.';
       } else if (message.includes('Password should be at least 6 characters')) {
         message = 'Password is too short. It must be at least 6 characters long.';
-      } else if (message.includes('Could not find the table')) {
-        message = 'DATABASE ERROR: The "profiles" table is missing in your Supabase project. \n\nFIX: Go to your Supabase SQL Editor and run the following command:\n\nCREATE TABLE profiles (\n  id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,\n  email TEXT,\n  full_name TEXT,\n  role TEXT DEFAULT \'user\',\n  status TEXT DEFAULT \'pending\',\n  created_at TIMESTAMPTZ DEFAULT NOW()\n);';
+      } else if (message.includes('Could not find the table') || message.includes('PGRST205')) {
+        message = 'DATABASE ERROR: A required table is missing or the schema cache is stale. \n\nFIX: \n1. Go to your Supabase SQL Editor.\n2. Ensure the "profiles", "documents", and "beneficiaries" tables exist.\n3. If they exist, try running "NOTIFY pgrst, \'reload schema\';" in the SQL Editor to refresh the cache.';
+      } else if (message.includes('Failed to fetch')) {
+        message = 'CONNECTION ERROR: Failed to reach Supabase. \n\nTROUBLESHOOTING: \n1. Check your internet connection.\n2. Verify that VITE_SUPABASE_URL starts with "https://".\n3. Ensure your Supabase project is NOT paused (check your Supabase Dashboard).\n4. Verify that VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are correctly set in your environment variables.';
       } else if (message.includes('Email not confirmed')) {
         message = 'Your email is not confirmed. Please check your inbox (and spam) for a confirmation link. \n\nTIP: You can disable this requirement in your Supabase Dashboard under Authentication -> Settings -> User Sign Up -> Disable "Confirm email".';
       } else if (message.includes('security purposes')) {
