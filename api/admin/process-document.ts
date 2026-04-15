@@ -120,6 +120,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const workbook = xlsx.read(buffer, { type: "buffer" });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       text = xlsx.utils.sheet_to_txt(sheet);
+      console.log("Raw Excel text (first 200 chars):", text.slice(0, 200));
+      // Ensure proper UTF-8 encoding by removing null bytes and converting from UTF-16 if needed
+      text = text.replace(/\x00/g, '').normalize('NFC');
+      console.log("Cleaned Excel text (first 200 chars):", text.slice(0, 200));
     } else {
       text = buffer.toString("utf-8");
     }
