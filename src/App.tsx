@@ -518,10 +518,11 @@ function ChatView() {
       });
 
       const data = await response.json();
+      const assistantContent = data.response || data.answer || 'No answer available.';
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: data.response,
-        sources: data.sources
+        content: assistantContent,
+        sources: data.sources || []
       }]);
     } catch (error) {
       console.error('Chat error:', error);
