@@ -4,6 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import { createClient } from '@supabase/supabase-js';
 import levenshtein from 'js-levenshtein';
 import dotenv from 'dotenv';
+import { randomUUID } from 'crypto';
 
 dotenv.config();
 
@@ -330,20 +331,39 @@ app.post('/api/admin/process-document', async (req, res) => {
     // Chunk text
     const chunks = text.match(/[\s\S]{1,1000}/g) || [];
 
-    // Generate embeddings and store
-    for (const chunk of chunks) {
+    const chunkRows: any[] = [];
+    const embeddingRows: any[] = [];
+
+    for (let index = 0; index < chunks.length; index++) {
+      const chunk = chunks[index];
+      const chunkId = randomUUID();
       const embedding = await generateEmbedding(chunk);
 
-      await supabase.from('document_embeddings').insert({
+      chunkRows.push({
+        id: chunkId,
         document_id: documentId,
+        chunk_index: index,
         content: chunk,
-        embedding: embedding,
-        file_name: fileName,
-        folder: folder
+        chunk_size: chunk.length,
+      });
+
+      embeddingRows.push({
+        chunk_id: chunkId,
+        embedding,
       });
     }
 
-    res.json({ success: true });
+    const { error: chunkError } = await supabase.from('document_chunks').insert(chunkRows);
+    if (chunkError) {
+      throw chunkError;
+    }
+
+    const { error: embeddingError } = await supabase.from('document_embeddings').insert(embeddingRows);
+    if (embeddingError) {
+      throw embeddingError;
+    }
+
+    res.json({ success: true, chunksProcessed: chunkRows.length });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

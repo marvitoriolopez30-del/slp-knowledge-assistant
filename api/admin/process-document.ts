@@ -1,5 +1,6 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { randomUUID } from "crypto";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -104,27 +105,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const rows = [];
-    for (const chunk of chunks) {
+    const chunkRows: any[] = [];
+    const embeddingRows: any[] = [];
+
+    for (let index = 0; index < chunks.length; index++) {
+      const chunk = chunks[index];
+      const chunkId = randomUUID();
       const embedding = await generateEmbedding(chunk);
-      rows.push({
+
+      chunkRows.push({
+        id: chunkId,
         document_id: documentId,
+        chunk_index: index,
         content: chunk,
+        chunk_size: chunk.length,
+      });
+
+      embeddingRows.push({
+        chunk_id: chunkId,
         embedding,
-        file_name: fileName,
-        folder: folder || "OTHER FILES",
       });
     }
 
-    const { error } = await supabase.from("document_embeddings").insert(rows);
-    if (error) {
-      throw error;
+    const { error: chunkError } = await supabase.from("document_chunks").insert(chunkRows);
+    if (chunkError) {
+      throw chunkError;
+    }
+
+    const { error: embeddingError } = await supabase.from("document_embeddings").insert(embeddingRows);
+    if (embeddingError) {
+      throw embeddingError;
     }
 
     return res.status(200).json({
       success: true,
       message: "Document processed successfully",
-      chunksProcessed: rows.length,
+      chunksProcessed: chunkRows.length,
       chunkSize: CHUNK_SIZE,
     });
   } catch (error: any) {
