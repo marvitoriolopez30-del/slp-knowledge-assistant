@@ -18,14 +18,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const nvidiaResponse = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+        "Authorization": `Bearer ${process.env.NVIDIA_API_KEY}`
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: process.env.NVIDIA_CHAT_MODEL || "nvidia/llama-2-7b-chat",
         messages: [
           {
             role: "system",
@@ -39,7 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
     });
 
-    const data = await openaiResponse.json();
+    const data = await nvidiaResponse.json();
 
     const answer =
       data?.choices?.[0]?.message?.content ||

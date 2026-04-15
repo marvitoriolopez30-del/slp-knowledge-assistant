@@ -1,6 +1,5 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import OpenAI from "openai";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -9,7 +8,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     // Validate environment variables
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.OPENAI_API_KEY) {
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NVIDIA_API_KEY) {
       console.error("Missing environment variables");
       return res.status(500).json({ 
         error: "Server configuration error: Missing required environment variables" 
@@ -21,9 +20,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
     const { userId, sessionId, message, history = [] } = req.body;
 
     if (!userId || !message) {
@@ -41,14 +37,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(403).json({ error: "User not approved" });
     }
 
-    // 1. Generate embedding for the user's message
+    // 1. Generate embedding for the user's message using Nvidia API
     let queryEmbedding;
     try {
-      const embeddingResponse = await openai.embeddings.create({
-        model: "text-embedding-3-small",
-        input: message,
-      });
-      queryEmbedding = embeddingResponse.data[0].embedding;
+      const embeddingResponse = await fetch(
+        process.env.NVIDIA_EMBEDDINGS_API_URL || "https://integrate.api.nvidia.com/v1/embeddings",
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${process.env.NVIDIA_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: process.env.NVIDIA_EMBEDDING_MODEL || "baai/bge-m3",
+            input: message,
+          }),
+        }
+      );
+
+      if (!embeddingResponse.ok) {
+        const error = await embeddingResponse.text();
+        console.error("Nvidia embedding error:", error);
+        throw new Error(`Nvidia API error: ${embeddingResponse.status}`);
+      }
+
+      const embeddingData = await embeddingResponse.json();
+      queryEmbedding = embeddingData.data[0].embedding;
     } catch (embeddingError: any) {
       console.error("Error creating embedding:", embeddingError);
       return res.status(500).json({ 
@@ -88,7 +102,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .select("id, file_name, folder")
       .in("id", sourceDocIds);
 
-    // 3. Generate response using OpenAI with RAG
+    // 3. Generate response using Nvidia API with RAG
     const systemPrompt = `You are the SLP Knowledge Assistant - a helpful AI that answers questions about the Sustainable Livelihood Program (SLP) of DSWD Philippines.
 
 IMPORTANT RULES:
@@ -109,30 +123,48 @@ If the user asks for a specific document or form, help them locate it. If they a
         role: msg.role,
         content: msg.content,
       })),
-      { role: "user" as const, content: message },
+      { role: "user", content: message },
     ];
 
-    let completion;
+    let assistantMessage = "I encountered an error generating a response.";
+    let tokensUsed = 0;
+
     try {
-      completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages,
-        ],
-        temperature: 0.7,
-        max_tokens: 1500,
-      });
+      const chatResponse = await fetch(
+        "https://integrate.api.nvidia.com/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${process.env.NVIDIA_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: process.env.NVIDIA_CHAT_MODEL || "nvidia/llama-2-7b-chat",
+            messages: [
+              { role: "system", content: systemPrompt },
+              ...messages,
+            ],
+            temperature: 0.7,
+            max_tokens: 1500,
+          }),
+        }
+      );
+
+      if (!chatResponse.ok) {
+        const error = await chatResponse.text();
+        console.error("Nvidia chat error:", error);
+        throw new Error(`Nvidia API error: ${chatResponse.status}`);
+      }
+
+      const chatData = await chatResponse.json();
+      assistantMessage = chatData.choices?.[0]?.message?.content || "No response generated";
+      tokensUsed = chatData.usage?.total_tokens || 0;
     } catch (chatError: any) {
       console.error("Error creating chat completion:", chatError);
       return res.status(500).json({ 
         error: "Failed to generate response. Please try again." 
       });
     }
-
-    const assistantMessage =
-      completion.choices[0]?.message?.content ||
-      "I encountered an error generating a response.";
 
     // Save message to chat history if sessionId provided (non-blocking)
     if (sessionId) {
@@ -155,14 +187,14 @@ If the user asks for a specific document or form, help them locate it. If they a
       user_id: userId,
       message,
       response: assistantMessage,
-      tokens_used: completion.usage?.total_tokens || 0,
+      tokens_used: tokensUsed,
     });
 
     return res.status(200).json({
       answer: assistantMessage,
       sources: sourceDocs || [],
       matchedChunks: matchedChunks?.length || 0,
-      tokensUsed: completion.usage?.total_tokens || 0,
+      tokensUsed: tokensUsed,
     });
   } catch (error: any) {
     console.error("Chat API Error:", error);

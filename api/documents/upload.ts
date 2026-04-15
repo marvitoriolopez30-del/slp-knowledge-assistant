@@ -1,16 +1,11 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import OpenAI from "openai";
 import { randomUUID } from "crypto";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 // Chunk size for splitting documents
 const CHUNK_SIZE = 500; // tokens roughly = chars * 0.25
@@ -40,6 +35,33 @@ function chunkText(text: string): string[] {
   }
 
   return chunks.filter((chunk) => chunk.trim().length > 0);
+}
+
+// Generate embeddings using Nvidia API
+async function generateEmbedding(text: string): Promise<number[]> {
+  const response = await fetch(
+    process.env.NVIDIA_EMBEDDINGS_API_URL || "https://integrate.api.nvidia.com/v1/embeddings",
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.NVIDIA_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.NVIDIA_EMBEDDING_MODEL || "baai/bge-m3",
+        input: text,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error("Nvidia embedding error:", error);
+    throw new Error(`Nvidia API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.data[0].embedding;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -100,19 +122,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       chunkIds.push(chunkId);
     }
 
-    // Generate embeddings for each chunk
+    // Generate embeddings for each chunk using Nvidia API
     for (let i = 0; i < chunks.length; i++) {
       try {
-        const embedding = await openai.embeddings.create({
-          model: "text-embedding-3-small",
-          input: chunks[i],
-        });
+        const embedding = await generateEmbedding(chunks[i]);
 
         const { error: embError } = await supabase
           .from("document_embeddings")
           .insert({
             chunk_id: chunkIds[i],
-            embedding: embedding.data[0].embedding,
+            embedding: embedding,
           });
 
         if (embError) throw embError;
