@@ -1,43 +1,49 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import OpenAI from "openai";
-import { randomUUID } from "crypto";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY || "";
+const NVIDIA_EMBEDDINGS_API_URL =
+  process.env.NVIDIA_EMBEDDINGS_API_URL || "https://integrate.api.nvidia.com/v1/embeddings";
+const NVIDIA_EMBEDDING_MODEL = process.env.NVIDIA_EMBEDDING_MODEL || "baai/bge-m3";
 
-const CHUNK_SIZE = 500;
-const CHUNK_OVERLAP = 50;
+const CHUNK_SIZE = 1000;
 
 function chunkText(text: string): string[] {
-  const chunks: string[] = [];
-  const words = text.split(" ");
-  let currentChunk: string[] = [];
-  let currentSize = 0;
+  return (text.match(/[\s\S]{1,1000}/g) || []).map((chunk) => chunk.trim()).filter(Boolean);
+}
 
-  for (const word of words) {
-    const wordSize = word.length + 1;
-    if (currentSize + wordSize > CHUNK_SIZE && currentChunk.length > 0) {
-      chunks.push(currentChunk.join(" "));
-      const overlapWords = currentChunk.slice(-Math.ceil(CHUNK_OVERLAP / 4));
-      currentChunk = overlapWords;
-      currentSize = overlapWords.join(" ").length + 1;
-    }
-    currentChunk.push(word);
-    currentSize += wordSize;
+async function generateEmbedding(input: string) {
+  if (!NVIDIA_API_KEY) {
+    throw new Error("NVIDIA_API_KEY is required for embeddings.");
   }
 
-  if (currentChunk.length > 0) {
-    chunks.push(currentChunk.join(" "));
+  const response = await fetch(NVIDIA_EMBEDDINGS_API_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${NVIDIA_API_KEY}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      model: NVIDIA_EMBEDDING_MODEL,
+      input,
+      encoding_format: "float",
+      truncate: "END",
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`NVIDIA embedding request failed (${response.status}): ${errorText}`);
   }
 
-  return chunks.filter((chunk) => chunk.trim().length > 0);
+  const data = await response.json();
+  return data?.data?.[0]?.embedding || [];
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -46,89 +52,73 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { documentId, fileUrl, fileName } = req.body;
+    const { documentId, fileUrl, fileName, folder } = req.body;
 
-    if (!documentId || !fileUrl) {
-      return res.status(400).json({ error: "Document ID and file URL required" });
+    if (!documentId || !fileUrl || !fileName) {
+      return res.status(400).json({ error: "documentId, fileUrl, and fileName are required" });
     }
 
-    // Extract text from file based on extension
+    const response = await fetch(fileUrl);
+    if (!response.ok) {
+      throw new Error("Failed to download file");
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const ext = fileName.toLowerCase().split(".").pop() || "";
+
     let text = "";
-    
-    try {
-      const response = await fetch(fileUrl);
-      if (!response.ok) throw new Error("Failed to download file");
-      
-      const ext = fileName?.toLowerCase().split(".").pop() || "";
-      const buffer = await response.arrayBuffer();
-      const bufferData = Buffer.from(buffer);
 
-      if (ext === "pdf") {
-        // For PDF, try to extract text (basic)
-        text = bufferData.toString("utf-8").replace(/[^\x20-\x7E\n]/g, "");
-      } else if (ext === "docx" || ext === "txt") {
-        // For DOCX/TXT, extract text
-        text = bufferData.toString("utf-8");
-      } else {
-        // Fallback
-        text = bufferData.toString("utf-8");
-      }
-    } catch (error) {
-      console.error("Error downloading file:", error);
-      text = "Document content unavailable";
+    if (ext === "pdf") {
+      // @ts-ignore
+      const pdf = (await import("pdf-parse")).default;
+      const data = await pdf(buffer);
+      text = data.text;
+    } else if (ext === "docx") {
+      const mammoth = (await import("mammoth")).default;
+      const result = await mammoth.extractRawText({ buffer });
+      text = result.value;
+    } else if (ext === "xlsx" || ext === "csv") {
+      const xlsx = await import("xlsx");
+      const workbook = xlsx.read(buffer, { type: "buffer" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      text = xlsx.utils.sheet_to_txt(sheet);
+    } else {
+      text = buffer.toString("utf-8");
     }
 
-    // Split into chunks
     const chunks = chunkText(text);
 
-    // Generate embeddings and store
-    for (let i = 0; i < chunks.length; i++) {
-      const chunkId = randomUUID();
-      
-      // Insert chunk
-      const { error: chunkError } = await supabase
-        .from("document_chunks")
-        .insert({
-          id: chunkId,
-          document_id: documentId,
-          chunk_index: i,
-          content: chunks[i],
-          chunk_size: chunks[i].length,
-        });
+    if (!chunks.length) {
+      return res.status(200).json({
+        success: true,
+        message: "No extractable text found",
+        chunksProcessed: 0,
+      });
+    }
 
-      if (chunkError) {
-        console.error(`Error inserting chunk ${i}:`, chunkError);
-        continue;
-      }
+    const rows = [];
+    for (const chunk of chunks) {
+      const embedding = await generateEmbedding(chunk);
+      rows.push({
+        document_id: documentId,
+        content: chunk,
+        embedding,
+        file_name: fileName,
+        folder: folder || "OTHER FILES",
+      });
+    }
 
-      // Generate embedding
-      try {
-        const embedding = await openai.embeddings.create({
-          model: "text-embedding-3-small",
-          input: chunks[i],
-        });
-
-        const { error: embError } = await supabase
-          .from("document_embeddings")
-          .insert({
-            chunk_id: chunkId,
-            embedding: embedding.data[0].embedding,
-          });
-
-        if (embError) {
-          console.error(`Error storing embedding for chunk ${i}:`, embError);
-        }
-      } catch (error) {
-        console.error(`Error generating embedding for chunk ${i}:`, error);
-      }
+    const { error } = await supabase.from("document_embeddings").insert(rows);
+    if (error) {
+      throw error;
     }
 
     return res.status(200).json({
       success: true,
       message: "Document processed successfully",
-      chunksProcessed: chunks.length,
+      chunksProcessed: rows.length,
+      chunkSize: CHUNK_SIZE,
     });
-
   } catch (error: any) {
     console.error("Processing error:", error);
     return res.status(500).json({

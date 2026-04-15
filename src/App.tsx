@@ -673,7 +673,7 @@ function DocsView({ role }: { role?: string }) {
             file_name: file.name,
             file_url: publicUrl,
             folder: folder,
-            content_text: '' // Will be processed by server
+            uploaded_by: (await supabase.auth.getUser()).data.user?.id
           })
           .select()
           .single();
@@ -1332,7 +1332,7 @@ function AdminView() {
                 title="Documents Table" 
                 status={healthStatus.documentsTable} 
                 description="Stores metadata for uploaded knowledge files."
-                fix="CREATE TABLE documents (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, file_name TEXT, file_url TEXT, folder TEXT, content_text TEXT, created_at TIMESTAMPTZ DEFAULT NOW());"
+                fix="CREATE TABLE documents (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, file_name TEXT, file_url TEXT, folder TEXT, uploaded_by UUID, created_at TIMESTAMPTZ DEFAULT NOW());"
               />
               <HealthCard 
                 title="Beneficiaries Table" 
