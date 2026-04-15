@@ -3,16 +3,15 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
 const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
-export const isSupabaseConfigured =
-  !!supabaseUrl &&
-  !!supabaseAnonKey &&
-  supabaseUrl.startsWith('https://') &&
+export const isSupabaseConfigured = !!supabaseUrl && 
+  !!supabaseAnonKey && 
+  supabaseUrl.startsWith('https://') && 
   !supabaseUrl.includes('placeholder') &&
   !supabaseUrl.includes('YOUR_SUPABASE_URL') &&
-  supabaseUrl.length > 20;
+  supabaseUrl.length > 20; // Basic length check for a real URL
 
 export const supabase = createClient(
-  isSupabaseConfigured ? supabaseUrl : 'https://placeholder-project.supabase.co',
+  isSupabaseConfigured ? supabaseUrl : 'https://placeholder-project.supabase.co', 
   isSupabaseConfigured ? supabaseAnonKey : 'placeholder-key'
 );
 
