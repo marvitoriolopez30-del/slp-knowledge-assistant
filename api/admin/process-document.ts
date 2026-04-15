@@ -138,13 +138,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    console.log(`Processing ${chunks.length} chunks for document ${documentId}`);
+
     const chunkRows: any[] = [];
     const embeddingRows: any[] = [];
 
     for (let index = 0; index < chunks.length; index++) {
       const chunk = chunks[index];
+      console.log(`Processing chunk ${index + 1}/${chunks.length}, length: ${chunk.length}`);
+
       const chunkId = randomUUID();
-      const embedding = await generateEmbedding(chunk);
+      let embedding;
+
+      try {
+        embedding = await generateEmbedding(chunk);
+        console.log(`Generated embedding for chunk ${index + 1}, length: ${embedding.length}`);
+      } catch (embedError) {
+        console.error(`Failed to generate embedding for chunk ${index + 1}:`, embedError);
+        // Continue with other chunks instead of failing completely
+        throw embedError;
+      }
 
       chunkRows.push({
         id: chunkId,
@@ -160,14 +173,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const { error: chunkError } = await supabase.from("document_chunks").insert(chunkRows);
-    if (chunkError) {
-      throw chunkError;
+    console.log(`Inserting ${chunkRows.length} chunks and ${embeddingRows.length} embeddings`);
+
+    if (chunkRows.length > 0) {
+      const { error: chunkError } = await supabase.from("document_chunks").insert(chunkRows);
+      if (chunkError) {
+        console.error("Chunk insert error:", chunkError);
+        throw chunkError;
+      }
+      console.log(`Successfully inserted ${chunkRows.length} chunks`);
     }
 
-    const { error: embeddingError } = await supabase.from("document_embeddings").insert(embeddingRows);
-    if (embeddingError) {
-      throw embeddingError;
+    if (embeddingRows.length > 0) {
+      const { error: embeddingError } = await supabase.from("document_embeddings").insert(embeddingRows);
+      if (embeddingError) {
+        console.error("Embedding insert error:", embeddingError);
+        throw embeddingError;
+      }
+      console.log(`Successfully inserted ${embeddingRows.length} embeddings`);
     }
 
     return res.status(200).json({
