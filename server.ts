@@ -93,7 +93,7 @@ async function generateEmbedding(input: string) {
     },
     body: JSON.stringify({
       model: NVIDIA_EMBEDDING_MODEL,
-      input,
+      input: [input],
       encoding_format: 'float',
       truncate: 'END',
     }),
@@ -105,7 +105,18 @@ async function generateEmbedding(input: string) {
   }
 
   const data = await response.json();
-  return data?.data?.[0]?.embedding || [];
+  const embedding =
+    data?.data?.[0]?.embedding ??
+    data?.data?.[0]?.vector ??
+    data?.embedding ??
+    data?.vector;
+
+  if (!Array.isArray(embedding) || embedding.length === 0) {
+    console.error('Invalid Nvidia embedding response:', data);
+    throw new Error('Invalid Nvidia embedding response.');
+  }
+
+  return embedding;
 }
 
 async function rerankDocuments(query: string, documents: RetrievedDocument[]) {

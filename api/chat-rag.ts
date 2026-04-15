@@ -97,7 +97,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           },
           body: JSON.stringify({
             model: process.env.NVIDIA_EMBEDDING_MODEL || "nvidia/llama-3_2-nemoretriever-300m-embed-v2",
-            input: message,
+            input: [message],
           }),
         }
       );
@@ -109,7 +109,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const embeddingData = await embeddingResponse.json();
-      queryEmbedding = embeddingData.data[0].embedding;
+      queryEmbedding =
+        embeddingData?.data?.[0]?.embedding ??
+        embeddingData?.data?.[0]?.vector ??
+        embeddingData?.embedding ??
+        embeddingData?.vector;
+
+      if (!Array.isArray(queryEmbedding) || queryEmbedding.length === 0) {
+        console.error("Invalid Nvidia embedding response:", embeddingData);
+        throw new Error("Invalid Nvidia embedding response.");
+      }
     } catch (embeddingError: any) {
       console.error("Error creating embedding:", embeddingError);
       return res.status(500).json({ 

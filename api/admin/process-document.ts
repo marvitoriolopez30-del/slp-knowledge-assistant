@@ -64,7 +64,7 @@ async function generateEmbedding(input: string) {
     },
     body: JSON.stringify({
       model: NVIDIA_EMBEDDING_MODEL,
-      input,
+      input: [input],
       encoding_format: "float",
       truncate: "END",
     }),
@@ -77,7 +77,11 @@ async function generateEmbedding(input: string) {
   }
 
   const data = await response.json();
-  const embedding = data?.data?.[0]?.embedding;
+  const embedding =
+    data?.data?.[0]?.embedding ??
+    data?.data?.[0]?.vector ??
+    data?.embedding ??
+    data?.vector;
 
   if (!Array.isArray(embedding) || embedding.length === 0) {
     console.error("NVIDIA embedding returned invalid data:", data);

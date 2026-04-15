@@ -49,7 +49,7 @@ async function generateEmbedding(text: string): Promise<number[]> {
       },
       body: JSON.stringify({
         model: process.env.NVIDIA_EMBEDDING_MODEL || "nvidia/llama-3_2-nemoretriever-300m-embed-v2",
-        input: text,
+        input: [text],
       }),
     }
   );
@@ -61,7 +61,18 @@ async function generateEmbedding(text: string): Promise<number[]> {
   }
 
   const data = await response.json();
-  return data.data[0].embedding;
+  const embedding =
+    data?.data?.[0]?.embedding ??
+    data?.data?.[0]?.vector ??
+    data?.embedding ??
+    data?.vector;
+
+  if (!Array.isArray(embedding) || embedding.length === 0) {
+    console.error("Nvidia embedding returned invalid data:", data);
+    throw new Error("Invalid Nvidia embedding response.");
+  }
+
+  return embedding;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
