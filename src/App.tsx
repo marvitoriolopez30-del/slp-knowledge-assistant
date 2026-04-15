@@ -469,7 +469,7 @@ export default function App() {
 
         <div className="flex-1 p-4 lg:p-8 overflow-y-auto">
           <div className="max-w-7xl mx-auto w-full">
-            {activeTab === 'chat' && <ChatView />}
+            {activeTab === 'chat' && <ChatView user={user} profile={profile} />}
             {activeTab === 'docs' && <DocsView role={profile?.role || (user?.email === MASTER_ADMIN_EMAIL ? 'admin' : 'user')} />}
             {activeTab === 'beneficiaries' && <BeneficiaryView />}
             {activeTab === 'admin' && (profile?.role === 'admin' || user?.email === MASTER_ADMIN_EMAIL) && <AdminView />}
@@ -486,13 +486,35 @@ export default function App() {
 
 // --- Views ---
 
-function ChatView() {
+function ChatView({ user, profile }: { user: any; profile: any }) {
   const [messages, setMessages] = useState<any[]>([
     { role: 'assistant', content: 'Hello! I am your SLP Knowledge Assistant. How can I help you today? I can answer questions about policies, retrieve templates, or analyze SLP guidelines.' }
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [sessionId, setSessionId] = useState<string>('');
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Create or fetch session on component mount
+  useEffect(() => {
+    const initSession = async () => {
+      if (!user?.id) return;
+      try {
+        const response = await fetch('/api/chat-sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id })
+        });
+        const data = await response.json();
+        if (data.session?.id) {
+          setSessionId(data.session.id);
+        }
+      } catch (error) {
+        console.error('Error creating chat session:', error);
+      }
+    };
+    initSession();
+  }, [user?.id]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -500,33 +522,48 @@ function ChatView() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isTyping) return;
+    if (!input.trim() || isTyping || !user?.id) return;
 
     const userMsg = { role: 'user', content: input };
+    const currentInput = input;
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsTyping(true);
 
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/chat-rag', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          message: input,
-          history: messages.slice(-5) // Send last 5 messages for context
+          userId: user.id,
+          sessionId: sessionId,
+          message: currentInput,
+          history: messages.slice(-5).map((msg: any) => ({
+            role: msg.role,
+            content: msg.content
+          }))
         })
       });
 
       const data = await response.json();
-      const assistantContent = data.response || data.answer || 'No answer available.';
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      const assistantContent = data.answer || 'No answer available.';
       setMessages(prev => [...prev, { 
         role: 'assistant', 
         content: assistantContent,
-        sources: data.sources || []
+        sources: data.sources || [],
+        matchedChunks: data.matchedChunks || 0
       }]);
     } catch (error) {
       console.error('Chat error:', error);
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I encountered an error processing your request.' }]);
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: 'Sorry, I encountered an error processing your request. Make sure you have uploaded documents to the knowledge base.'
+      }]);
     } finally {
       setIsTyping(false);
     }
