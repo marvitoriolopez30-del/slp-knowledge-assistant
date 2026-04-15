@@ -97,7 +97,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           },
           body: JSON.stringify({
             model: process.env.NVIDIA_EMBEDDING_MODEL || "nvidia/llama-3_2-nemoretriever-300m-embed-v2",
-            input: [message],
+            input: message,
           }),
         }
       );

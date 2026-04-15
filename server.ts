@@ -93,9 +93,7 @@ async function generateEmbedding(input: string) {
     },
     body: JSON.stringify({
       model: NVIDIA_EMBEDDING_MODEL,
-      input: [input],
-      encoding_format: 'float',
-      truncate: 'END',
+      input,
     }),
   });
 
