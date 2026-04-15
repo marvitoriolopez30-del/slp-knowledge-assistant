@@ -40,7 +40,7 @@ function chunkText(text: string): string[] {
 // Generate embeddings using Nvidia API
 async function generateEmbedding(text: string): Promise<number[]> {
   const response = await fetch(
-    process.env.NVIDIA_EMBEDDINGS_API_URL || "https://integrate.api.nvidia.com/v1/embeddings",
+    "https://integrate.api.nvidia.com/v1/embeddings",
     {
       method: "POST",
       headers: {
@@ -48,7 +48,7 @@ async function generateEmbedding(text: string): Promise<number[]> {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: process.env.NVIDIA_EMBEDDING_MODEL || "baai/bge-m3",
+        model: process.env.NVIDIA_EMBEDDING_MODEL || "nvidia/llama-3_2-nemoretriever-300m-embed-v2",
         input: text,
       }),
     }

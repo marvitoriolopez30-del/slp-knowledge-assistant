@@ -18,26 +18,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const nvidiaResponse = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.NVIDIA_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: process.env.NVIDIA_CHAT_MODEL || "nvidia/llama-2-7b-chat",
-        messages: [
-          {
-            role: "system",
-            content: "You are an assistant for the Sustainable Livelihood Program (SLP) of DSWD."
-          },
-          {
-            role: "user",
-            content: message
-          }
-        ]
-      })
-    });
+    const nvidiaResponse = await fetch(
+      process.env.NVIDIA_API_URL || "https://integrate.api.nvidia.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.NVIDIA_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: process.env.NVIDIA_MODEL || "openai/gpt-oss-120b",
+          messages: [
+            {
+              role: "system",
+              content: "You are an assistant for the Sustainable Livelihood Program (SLP) of DSWD."
+            },
+            {
+              role: "user",
+              content: message
+            }
+          ]
+        })
+      }
+    );
 
     const data = await nvidiaResponse.json();
 
