@@ -57,6 +57,30 @@ function ensureNvidiaApiKey() {
   }
 }
 
+function getStoragePathFromUrl(fileUrl: string): string | null {
+  const marker = '/storage/v1/object/public/knowledge/';
+  const index = fileUrl.indexOf(marker);
+  if (index === -1) return null;
+  return decodeURIComponent(fileUrl.substring(index + marker.length));
+}
+
+async function downloadFile(fileUrl: string) {
+  const storagePath = getStoragePathFromUrl(fileUrl);
+  if (storagePath) {
+    const { data, error } = await supabase.storage.from('knowledge').download(storagePath);
+    if (error || !data) {
+      throw new Error(`Supabase storage download failed: ${error?.message || 'unknown error'}`);
+    }
+    return Buffer.from(await data.arrayBuffer());
+  }
+
+  const response = await fetch(fileUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download file from URL: ${response.status}`);
+  }
+  return Buffer.from(await response.arrayBuffer());
+}
+
 async function generateEmbedding(input: string) {
   ensureNvidiaApiKey();
 
@@ -308,8 +332,7 @@ app.post('/api/admin/process-document', async (req, res) => {
     const xlsx = await import('xlsx');
 
     // Fetch file from Supabase Storage
-    const response = await fetch(fileUrl);
-    const buffer = Buffer.from(await response.arrayBuffer());
+    const buffer = await downloadFile(fileUrl);
 
     let text = '';
     const ext = path.extname(fileName).toLowerCase();

@@ -18,6 +18,31 @@ function chunkText(text: string): string[] {
   return (text.match(/[\s\S]{1,1000}/g) || []).map((chunk) => chunk.trim()).filter(Boolean);
 }
 
+function getStoragePathFromUrl(fileUrl: string): string | null {
+  const marker = '/storage/v1/object/public/knowledge/';
+  const index = fileUrl.indexOf(marker);
+  if (index === -1) return null;
+  return decodeURIComponent(fileUrl.substring(index + marker.length));
+}
+
+async function downloadFile(fileUrl: string) {
+  const storagePath = getStoragePathFromUrl(fileUrl);
+
+  if (storagePath) {
+    const { data, error } = await supabase.storage.from('knowledge').download(storagePath);
+    if (error || !data) {
+      throw new Error(`Supabase storage download failed: ${error?.message || 'unknown error'}`);
+    }
+    return Buffer.from(await data.arrayBuffer());
+  }
+
+  const response = await fetch(fileUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download file from URL: ${response.status}`);
+  }
+  return Buffer.from(await response.arrayBuffer());
+}
+
 async function generateEmbedding(input: string) {
   if (!NVIDIA_API_KEY) {
     throw new Error("NVIDIA_API_KEY is required for embeddings.");
@@ -39,7 +64,7 @@ async function generateEmbedding(input: string) {
     },
     body: JSON.stringify({
       model: NVIDIA_EMBEDDING_MODEL,
-      input: [input],
+      input,
       encoding_format: "float",
       truncate: "END",
     }),
@@ -52,7 +77,14 @@ async function generateEmbedding(input: string) {
   }
 
   const data = await response.json();
-  return data?.data?.[0]?.embedding || [];
+  const embedding = data?.data?.[0]?.embedding;
+
+  if (!Array.isArray(embedding) || embedding.length === 0) {
+    console.error("NVIDIA embedding returned invalid data:", data);
+    throw new Error("NVIDIA embedding returned invalid vector data.");
+  }
+
+  return embedding;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -67,12 +99,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "documentId, fileUrl, and fileName are required" });
     }
 
-    const response = await fetch(fileUrl);
-    if (!response.ok) {
-      throw new Error("Failed to download file");
-    }
-
-    const buffer = Buffer.from(await response.arrayBuffer());
+    const buffer = await downloadFile(fileUrl);
     const ext = fileName.toLowerCase().split(".").pop() || "";
 
     let text = "";
