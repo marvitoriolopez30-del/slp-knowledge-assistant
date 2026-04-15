@@ -704,6 +704,32 @@ function DocsView({ role }: { role?: string }) {
     }
   };
 
+  const handleDeleteDoc = async (doc: Document) => {
+    if (role !== 'admin') return;
+    if (!confirm(`Delete "${doc.file_name}"? This cannot be undone.`)) return;
+
+    try {
+      const fileUrl = new URL(doc.file_url);
+      const marker = '/storage/v1/object/public/knowledge/';
+      const markerIndex = fileUrl.pathname.indexOf(marker);
+
+      if (markerIndex >= 0) {
+        const storagePath = decodeURIComponent(fileUrl.pathname.slice(markerIndex + marker.length));
+        const { error: storageError } = await supabase.storage.from('knowledge').remove([storagePath]);
+        if (storageError) {
+          console.warn('Storage delete warning:', storageError);
+        }
+      }
+
+      const { error } = await supabase.from('documents').delete().eq('id', doc.id);
+      if (error) throw error;
+
+      setDocs(prev => prev.filter((item) => item.id !== doc.id));
+    } catch (error: any) {
+      alert(error.message || 'Failed to delete document.');
+    }
+  };
+
   const filteredDocs = docs.filter(d => 
     (selectedFolder === 'ALL' || d.folder === selectedFolder) &&
     (d.file_name.toLowerCase().includes(search.toLowerCase()))
@@ -844,15 +870,27 @@ function DocsView({ role }: { role?: string }) {
                     {new Date(doc.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <a 
-                      href={doc.file_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all"
-                    >
-                      <Download size={14} />
-                      Download
-                    </a>
+                    <div className="flex items-center justify-end gap-2">
+                      <a 
+                        href={doc.file_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all"
+                      >
+                        <Download size={14} />
+                        Download
+                      </a>
+                      {role === 'admin' && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDoc(doc)}
+                          className="inline-flex items-center gap-2 bg-white border border-red-200 text-red-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-600 hover:text-white hover:border-red-600 transition-all"
+                        >
+                          <Trash2 size={14} />
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               )) : (
