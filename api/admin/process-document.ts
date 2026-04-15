@@ -22,6 +22,13 @@ async function generateEmbedding(input: string) {
     throw new Error("NVIDIA_API_KEY is required for embeddings.");
   }
 
+  console.log("Embedding request config", {
+    model: NVIDIA_EMBEDDING_MODEL,
+    url: NVIDIA_EMBEDDINGS_API_URL,
+    hasApiKey: !!NVIDIA_API_KEY,
+    inputPreview: input.slice(0, 120),
+  });
+
   const response = await fetch(NVIDIA_EMBEDDINGS_API_URL, {
     method: "POST",
     headers: {
@@ -39,6 +46,7 @@ async function generateEmbedding(input: string) {
 
   if (!response.ok) {
     const errorText = await response.text();
+    console.error("NVIDIA embedding raw error:", errorText);
     throw new Error(`NVIDIA embedding request failed (${response.status}): ${errorText}`);
   }
 
