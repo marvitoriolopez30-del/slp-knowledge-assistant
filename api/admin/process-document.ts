@@ -11,13 +11,13 @@ const NVIDIA_EMBEDDINGS_API_URL =
   process.env.NVIDIA_EMBEDDINGS_API_URL || "https://integrate.api.nvidia.com/v1/embeddings";
 const NVIDIA_EMBEDDING_MODEL = process.env.NVIDIA_EMBEDDING_MODEL || "baai/bge-m3";
 
+const CHUNK_SIZE = 1000;
+
 function chunkText(text: string): string[] {
-  return (text.match(/[\s\S]{1,1000}/g) || [])
-    .map((chunk) => chunk.trim())
-    .filter(Boolean);
+  return (text.match(/[\s\S]{1,1000}/g) || []).map((chunk) => chunk.trim()).filter(Boolean);
 }
 
-async function generateEmbedding(input: string, inputType: "query" | "passage") {
+async function generateEmbedding(input: string) {
   if (!NVIDIA_API_KEY) {
     throw new Error("NVIDIA_API_KEY is required for embeddings.");
   }
@@ -31,8 +31,7 @@ async function generateEmbedding(input: string, inputType: "query" | "passage") 
     },
     body: JSON.stringify({
       model: NVIDIA_EMBEDDING_MODEL,
-      input: [input],
-      input_type: inputType,
+      input,
       encoding_format: "float",
       truncate: "END",
     }),
@@ -66,6 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const buffer = Buffer.from(await response.arrayBuffer());
     const ext = fileName.toLowerCase().split(".").pop() || "";
+
     let text = "";
 
     if (ext === "pdf") {
@@ -98,7 +98,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const rows = [];
     for (const chunk of chunks) {
-      const embedding = await generateEmbedding(chunk, "passage");
+      const embedding = await generateEmbedding(chunk);
       rows.push({
         document_id: documentId,
         content: chunk,
@@ -117,6 +117,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       message: "Document processed successfully",
       chunksProcessed: rows.length,
+      chunkSize: CHUNK_SIZE,
     });
   } catch (error: any) {
     console.error("Processing error:", error);
