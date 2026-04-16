@@ -60,7 +60,7 @@ const chatRes = await fetch("http://127.0.0.1:11434/api/generate", {
     stream: false,
     prompt: `You are an assistant for the Sustainable Livelihood Program (SLP).
 
-Use ONLY the context below to answer.
+Use ONLY the context below.
 
 Context:
 ${context}
@@ -74,15 +74,9 @@ Answer clearly.`,
 
 const chatData = await chatRes.json();
 
-if (!chatData.response) {
-  throw new Error("Chat failed");
-}
-
 return res.status(200).json({
-  answer: chatData.response
+  answer: chatData.response || "No response from model.",
 });
-```
-
 } catch (err: any) {
 console.error(err);
 return res.status(500).json({
