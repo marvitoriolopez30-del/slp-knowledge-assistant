@@ -718,7 +718,7 @@ function DocsView({ role }: { role?: string }) {
         if (dbError) throw dbError;
 
         // 3. Trigger Server Processing (OCR/Text Extraction)
-        await fetch('/api/admin/process-document', {
+        await fetch('/api/process-document', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1295,7 +1295,7 @@ function AdminView() {
         if (dbError) throw dbError;
 
         // Trigger RAG processing
-        await fetch('/api/admin/process-document', {
+        await fetch('/api/process-document', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
