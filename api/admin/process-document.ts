@@ -3,206 +3,76 @@ import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
 
 const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+process.env.SUPABASE_URL!,
+process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY || "";
-const NVIDIA_EMBEDDINGS_API_URL =
-  process.env.NVIDIA_EMBEDDINGS_API_URL || "https://integrate.api.nvidia.com/v1/embeddings";
-const NVIDIA_EMBEDDING_MODEL = process.env.NVIDIA_EMBEDDING_MODEL || "baai/bge-m3";
-
-const CHUNK_SIZE = 1000;
-
-function chunkText(text: string): string[] {
-  return (text.match(/[\s\S]{1,1000}/g) || []).map((chunk) => chunk.trim()).filter(Boolean);
+function splitText(text: string): string[] {
+return (text.match(/[\s\S]{1,1000}/g) || [])
+.map(t => t.trim())
+.filter(Boolean);
 }
 
-function getStoragePathFromUrl(fileUrl: string): string | null {
-  const marker = '/storage/v1/object/public/knowledge/';
-  const index = fileUrl.indexOf(marker);
-  if (index === -1) return null;
-  return decodeURIComponent(fileUrl.substring(index + marker.length));
+async function getEmbedding(text: string) {
+const res = await fetch("http://127.0.0.1:11434/api/embeddings", {
+method: "POST",
+headers: {
+"Content-Type": "application/json"
+},
+body: JSON.stringify({
+model: "nomic-embed-text",
+prompt: text
+})
+});
+
+const data = await res.json();
+
+if (!data.embedding) {
+throw new Error("Embedding failed");
 }
 
-async function downloadFile(fileUrl: string) {
-  const storagePath = getStoragePathFromUrl(fileUrl);
-
-  if (storagePath) {
-    const { data, error } = await supabase.storage.from('knowledge').download(storagePath);
-    if (error || !data) {
-      throw new Error(`Supabase storage download failed: ${error?.message || 'unknown error'}`);
-    }
-    return Buffer.from(await data.arrayBuffer());
-  }
-
-  const response = await fetch(fileUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to download file from URL: ${response.status}`);
-  }
-  return Buffer.from(await response.arrayBuffer());
-}
-
-async function generateEmbedding(input: string) {
-  if (!NVIDIA_API_KEY) {
-    throw new Error("NVIDIA_API_KEY is required for embeddings.");
-  }
-
-  console.log("Embedding request config", {
-    model: NVIDIA_EMBEDDING_MODEL,
-    url: NVIDIA_EMBEDDINGS_API_URL,
-    hasApiKey: !!NVIDIA_API_KEY,
-    inputPreview: input.slice(0, 120),
-  });
-
-  const response = await fetch(NVIDIA_EMBEDDINGS_API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${NVIDIA_API_KEY}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      model: NVIDIA_EMBEDDING_MODEL,
-      input,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("NVIDIA embedding raw error:", errorText);
-    throw new Error(`NVIDIA embedding request failed (${response.status}): ${errorText}`);
-  }
-
-  const data = await response.json();
-  const embedding =
-    data?.data?.[0]?.embedding ??
-    data?.data?.[0]?.vector ??
-    data?.embedding ??
-    data?.vector;
-
-  if (!Array.isArray(embedding) || embedding.length === 0) {
-    console.error("NVIDIA embedding returned invalid data:", data);
-    throw new Error("NVIDIA embedding returned invalid vector data.");
-  }
-
-  return embedding;
+return data.embedding;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+if (req.method !== "POST") {
+return res.status(405).json({ error: "Method not allowed" });
+}
 
-  try {
-    const { documentId, fileUrl, fileName, folder } = req.body;
+try {
+const body = req.body;
+const documentId = body.documentId;
+const text = body.text;
 
-    if (!documentId || !fileUrl || !fileName) {
-      return res.status(400).json({ error: "documentId, fileUrl, and fileName are required" });
-    }
+if (!documentId || !text) {
+  return res.status(400).json({ error: "Missing data" });
+}
 
-    const buffer = await downloadFile(fileUrl);
-    const ext = fileName.toLowerCase().split(".").pop() || "";
+const chunks = splitText(text);
 
-    let text = "";
+for (let i = 0; i < chunks.length; i++) {
+  const id = randomUUID();
 
-    if (ext === "pdf") {
-      // @ts-ignore
-      const pdf = (await import("pdf-parse")).default;
-      const data = await pdf(buffer);
-      text = data.text;
-    } else if (ext === "docx") {
-      const mammoth = (await import("mammoth")).default;
-      const result = await mammoth.extractRawText({ buffer });
-      text = result.value;
-    } else if (ext === "xlsx" || ext === "csv") {
-      const xlsx = await import("xlsx");
-      const workbook = xlsx.read(buffer, { type: "buffer" });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      text = xlsx.utils.sheet_to_txt(sheet);
-      console.log("Raw Excel text (first 200 chars):", text.slice(0, 200));
-      // Ensure proper UTF-8 encoding by removing null bytes and converting from UTF-16 if needed
-      text = text.replace(/\x00/g, '').normalize('NFC');
-      console.log("Cleaned Excel text (first 200 chars):", text.slice(0, 200));
-    } else {
-      text = buffer.toString("utf-8");
-    }
+  const embedding = await getEmbedding(chunks[i]);
 
-    const chunks = chunkText(text);
+  await supabase.from("document_chunks").insert({
+    id: id,
+    document_id: documentId,
+    content: chunks[i]
+  });
 
-    if (!chunks.length) {
-      return res.status(200).json({
-        success: true,
-        message: "No extractable text found",
-        chunksProcessed: 0,
-      });
-    }
+  await supabase.from("document_embeddings").insert({
+    chunk_id: id,
+    embedding: embedding
+  });
+}
 
-    console.log(`Processing ${chunks.length} chunks for document ${documentId}`);
+return res.status(200).json({ success: true });
 
-    const chunkRows: any[] = [];
-    const embeddingRows: any[] = [];
-
-    for (let index = 0; index < chunks.length; index++) {
-      const chunk = chunks[index];
-      console.log(`Processing chunk ${index + 1}/${chunks.length}, length: ${chunk.length}`);
-
-      const chunkId = randomUUID();
-      let embedding;
-
-      try {
-        embedding = await generateEmbedding(chunk);
-        console.log(`Generated embedding for chunk ${index + 1}, length: ${embedding.length}`);
-      } catch (embedError) {
-        console.error(`Failed to generate embedding for chunk ${index + 1}:`, embedError);
-        // Continue with other chunks instead of failing completely
-        throw embedError;
-      }
-
-      chunkRows.push({
-        id: chunkId,
-        document_id: documentId,
-        chunk_index: index,
-        content: chunk,
-        chunk_size: chunk.length,
-      });
-
-      embeddingRows.push({
-        chunk_id: chunkId,
-        embedding,
-      });
-    }
-
-    console.log(`Inserting ${chunkRows.length} chunks and ${embeddingRows.length} embeddings`);
-
-    if (chunkRows.length > 0) {
-      const { error: chunkError } = await supabase.from("document_chunks").insert(chunkRows);
-      if (chunkError) {
-        console.error("Chunk insert error:", chunkError);
-        throw chunkError;
-      }
-      console.log(`Successfully inserted ${chunkRows.length} chunks`);
-    }
-
-    if (embeddingRows.length > 0) {
-      const { error: embeddingError } = await supabase.from("document_embeddings").insert(embeddingRows);
-      if (embeddingError) {
-        console.error("Embedding insert error:", embeddingError);
-        throw embeddingError;
-      }
-      console.log(`Successfully inserted ${embeddingRows.length} embeddings`);
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Document processed successfully",
-      chunksProcessed: chunkRows.length,
-      chunkSize: CHUNK_SIZE,
-    });
-  } catch (error: any) {
-    console.error("Processing error:", error);
-    return res.status(500).json({
-      error: error?.message || "Document processing failed",
-    });
-  }
+} catch (err: any) {
+console.error(err);
+return res.status(500).json({
+error: err.message
+});
+}
 }
