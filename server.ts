@@ -12,7 +12,8 @@ import fsSync from "fs";
 import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
-import { createRequire } from "module";
+import BetterSqlite3 from "better-sqlite3";
+import compression from "compression";
 import { buildUnifiedDashboardAnalytics } from "./src/lib/dashboardAggregator.ts";
 import { createRetrievalPlan, routeUserQuery, type QueryRoute } from "./src/lib/retrievalController.ts";
 import { classifyDataSource, sourceDisplayName as registrySourceDisplayName } from "./src/config/dataSourceRegistry.ts";
@@ -22,9 +23,6 @@ import { proposalSchemas, type ProposalType } from "./src/proposalBuilder/propos
 
 dotenv.config();
 
-const require = createRequire(import.meta.url);
-const BetterSqlite3 = require("better-sqlite3");
-const compression = require("compression");
 const app = express();
 app.use(compression());
 app.use((req, res, next) => {
@@ -65,21 +63,21 @@ process.on("unhandledRejection", (reason) => {
   process.exit(1);
 });
 
-const UPLOAD_ROOT = path.resolve(process.cwd(), "uploads");
+const APP_DATA_ROOT = path.resolve(process.env.SLP_DATA_DIR || process.cwd());
+const STATIC_DIST_ROOT = path.resolve(process.env.SLP_STATIC_DIR || path.join(process.cwd(), "dist"));
+const UPLOAD_ROOT = path.join(APP_DATA_ROOT, "uploads");
 const PENDING_REGISTRATIONS_FILE = path.join(UPLOAD_ROOT, "pending-registrations.json");
 const DOCUMENT_CACHE_FILE = path.join(UPLOAD_ROOT, "documents-cache.json");
-const DATA_ROOT = path.resolve(process.cwd(), "data");
-const SERVER_ROOT = path.resolve(process.cwd(), "server");
-const PROPOSAL_TEMPLATE_ROOT = path.resolve(process.cwd(), "templates", "proposal");
+const DATA_ROOT = path.join(APP_DATA_ROOT, "data");
+const SERVER_ROOT = path.join(APP_DATA_ROOT, "server");
+const PROPOSAL_TEMPLATE_ROOT = path.join(APP_DATA_ROOT, "templates", "proposal");
 const PROPOSAL_GENERATED_ROOT = path.join(SERVER_ROOT, "generated-proposals");
-const LEGACY_LOCAL_DB_PATH = path.resolve(process.cwd(), "slp-local.sqlite");
-const DEFAULT_LOCAL_DB_PATH = fsSync.existsSync(LEGACY_LOCAL_DB_PATH)
-  ? LEGACY_LOCAL_DB_PATH
-  : path.join(DATA_ROOT, "slp-local.db");
-const LOCAL_DB_PATH = path.resolve(process.cwd(), process.env.LOCAL_SQLITE_PATH || DEFAULT_LOCAL_DB_PATH);
+const DEFAULT_LOCAL_DB_PATH = path.join(APP_DATA_ROOT, "slp-local.sqlite");
+const LOCAL_DB_PATH = path.resolve(APP_DATA_ROOT, process.env.LOCAL_SQLITE_PATH || DEFAULT_LOCAL_DB_PATH);
 const LOCAL_DOCUMENT_FOLDERS = new Set(["GUIDELINES", "SLPIS", "SLP DPT", "PROPOSALS", "TEMPLATES", "IMAGE", "OTHER DOCUMENTS"]);
 const RETRIEVAL_DEBUG = /^true|1|yes$/i.test(String(process.env.RETRIEVAL_DEBUG || ""));
 fsSync.mkdirSync(path.dirname(LOCAL_DB_PATH), { recursive: true });
+console.log("Using database:", LOCAL_DB_PATH);
 
 app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (err instanceof SyntaxError && "body" in err) return res.status(400).json({ error: "Invalid JSON request body." });
@@ -402,8 +400,8 @@ function initLocalDb() {
   // Create default admin if none exists
   const adminCount = db.prepare("SELECT COUNT(*) AS count FROM profiles WHERE role = 'admin'").get().count;
   if (!adminCount) {
-    const email = (process.env.LOCAL_ADMIN_EMAIL || "marvitoriolopez30@gmail.com").trim().toLowerCase();
-    const password = process.env.LOCAL_ADMIN_PASSWORD || "Admin123!";
+    const email = (process.env.LOCAL_ADMIN_EMAIL || "mvltorio@dswd.gov.ph").trim().toLowerCase();
+    const password = process.env.LOCAL_ADMIN_PASSWORD || "admin123";
     const now = new Date().toISOString();
     db.prepare("INSERT OR IGNORE INTO profiles (id, email, password_hash, full_name, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'admin', 'approved', ?, ?)").run(randomId("user"), email, hashPassword(password), email, now, now);
   }
@@ -1756,6 +1754,10 @@ function proposalRouteError(res: express.Response, err: any) {
     return res.status(status).json({ ok: false, error: "Proposal Builder request failed." });
   }
   res.status(status).json({ ok: false, error: err?.message || "Proposal Builder request failed." });
+}
+
+function proposalBuilderRemoved(_req: express.Request, res: express.Response) {
+  res.status(410).json({ ok: false, error: "Proposal Builder has been removed from this app." });
 }
 
 function seedProposalBuilderCatalogItems() {
@@ -11296,6 +11298,13 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
+app.use("/api/proposals", (req, res, next) => {
+  if (req.path === "/upload-folder") return next();
+  return proposalBuilderRemoved(req, res);
+});
+app.use("/api/proposal-catalogs", proposalBuilderRemoved);
+app.use("/api/proposal-references", proposalBuilderRemoved);
+
 app.get("/api/proposals", (req, res) => {
   try {
     const rows = db.prepare("SELECT * FROM proposal_projects ORDER BY updated_at DESC").all() as any[];
@@ -12301,8 +12310,7 @@ app.post("/api/upload-document", async (req, res) => {
       finalSavedFolder: folder,
     });
     if (!chatAttachment) {
-      const uploader = userId ? getLocalProfileById(String(userId)) : null;
-      if (!uploader || uploader.role !== "admin" || uploader.status !== "approved") return res.status(403).json({ error: "Only admin accounts can upload documents from the Documents page." });
+      if (!(await requireAdmin(String(userId || "")))) return res.status(403).json({ error: "Only admin accounts can upload documents from the Documents page." });
     }
     const buffer = Buffer.from(data, "base64");
     let text = "";
@@ -12369,8 +12377,7 @@ app.post("/api/proposals/upload-folder", async (req, res) => {
     if (selectedFolder !== "PROPOSALS") {
       return res.status(400).json({ error: "Proposal folder upload is only allowed when selectedFolder is PROPOSALS." });
     }
-    const uploader = userId ? getLocalProfileById(String(userId)) : null;
-    if (!uploader || uploader.role !== "admin" || uploader.status !== "approved") return res.status(403).json({ error: "Only admin accounts can upload proposal folders." });
+    if (!(await requireAdmin(String(userId || "")))) return res.status(403).json({ error: "Only admin accounts can upload proposal folders." });
     if (!Array.isArray(files) || !files.length) return res.status(400).json({ error: "Select one complete proposal folder to upload." });
 
     const normalizedFiles = files.map((file: any) => ({
@@ -12474,8 +12481,7 @@ app.use("/api/proposals", (_req, res) => {
 app.delete("/api/documents/:id", async (req, res) => {
   try {
     const { id } = req.params; const requesterId = String(req.query.userId || "");
-    const requester = requesterId ? getLocalProfileById(requesterId) : null;
-    if (!requester || requester.role !== "admin" || requester.status !== "approved") return res.status(403).json({ error: "Unauthorized" });
+    if (!(await requireAdmin(requesterId))) return res.status(403).json({ error: "Unauthorized" });
 
     const doc = db.prepare("SELECT id, file_url FROM documents WHERE id = ?").get(id);
     const cachedDoc = await removeLocalDocumentCache(id);
@@ -16308,9 +16314,25 @@ app.post("/api/process-document", async (req, res) => {
 });
 
 let startupIndexingQueued = false;
+
+function configureProductionStaticServing() {
+  if (!fsSync.existsSync(STATIC_DIST_ROOT)) return;
+  app.get(["/proposal-builder", "/proposal", "/proposals", "/builder"], (_req, res) => {
+    res.redirect(302, "/");
+  });
+  app.use(express.static(STATIC_DIST_ROOT));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api")) return next();
+    res.sendFile(path.join(STATIC_DIST_ROOT, "index.html"));
+  });
+  console.log(`Serving frontend from ${STATIC_DIST_ROOT}`);
+}
+
 function startApiServer(port: number) {
-  const server = app.listen(port, () => {
+  configureProductionStaticServing();
+  const server = app.listen(port, "0.0.0.0", () => {
     console.log(`API server running on http://localhost:${port}`);
+    console.log(`LAN users can open http://PC_IP_ADDRESS:${port}`);
     if (!startupIndexingQueued) {
       startupIndexingQueued = true;
       importExistingUploadsIntoSqlite()

@@ -31,8 +31,7 @@ import {
   Eye,
   ChevronDown,
   Database,
-  Layers,
-  ClipboardList
+  Layers
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -56,7 +55,6 @@ import {
   YAxis,
 } from "recharts";
 import { Dashboard as AnalyticsDashboard } from "./components/Dashboard";
-import { ProposalBuilder } from "./components/ProposalBuilder";
 import {
   emptyDashboardAnalytics,
   refreshDashboardAnalytics,
@@ -131,6 +129,13 @@ const DOCUMENT_FOLDERS = [
   "OTHER DOCUMENTS",
 ];
 
+const REMOVED_PROPOSAL_BUILDER_PATHS = new Set([
+  "/proposal-builder",
+  "/proposal",
+  "/proposals",
+  "/builder",
+]);
+
 function isAdminProfile(profile?: Profile | null) {
   return profile?.role === "admin" && profile.status === "approved";
 }
@@ -157,13 +162,13 @@ async function assertApiHealthy() {
     const tunnelHint = isDevTunnelHost()
       ? " Dev Tunnel detected. Make sure backend port 3001 is also forwarded and VITE_API_BASE_URL points to the 3001 tunnel URL."
       : "";
-    throw new Error(`App loaded, but API/database is not connected. Please forward backend port 3001 or set VITE_API_BASE_URL.${tunnelHint} ${error.message || error}`);
+    throw new Error(`App loaded, but API/database is not connected. Make sure the local server is running on port 3001 and Windows Firewall allows private-network access.${tunnelHint} ${error.message || error}`);
   }
 }
 
 // ================= MAIN APP =================
 export default function App() {
-  const [tab, setTab] = useState<"dashboard" | "chat" | "docs" | "match" | "proposal" | "admin" | "tools">("dashboard");
+  const [tab, setTab] = useState<"dashboard" | "chat" | "docs" | "match" | "admin">("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [settings, setSettings] = useState<AppSettings>({ app_logo_url: "" });
@@ -292,6 +297,21 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setSidebarOpen(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const normalizedPath = window.location.pathname.replace(/\/+$/, "") || "/";
+    if (REMOVED_PROPOSAL_BUILDER_PATHS.has(normalizedPath)) {
+      window.history.replaceState(null, "", "/");
+      setTab("dashboard");
+    }
+  }, []);
+
+  useEffect(() => {
     if (tab === "admin" && !isAdmin) {
       setTab("dashboard");
     }
@@ -327,7 +347,15 @@ export default function App() {
     <div className="flex h-screen bg-[#ECFDF5] text-[#0F172A]">
       {/* SIDEBAR */}
       {sidebarOpen && (
-        <div className="flex w-72 flex-col bg-[#064E3B] text-white shadow-2xl border-r border-[#D8E6E1]">
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          className="fixed inset-0 z-30 bg-slate-900/40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      {sidebarOpen && (
+        <div className="fixed inset-y-0 left-0 z-40 flex w-72 flex-col bg-[#064E3B] text-white shadow-2xl border-r border-[#D8E6E1] md:static md:z-auto">
           {/* Logo Section */}
           <div className="p-6 border-b border-white/10">
             <div className="flex items-center gap-3 mb-2">
@@ -373,12 +401,6 @@ export default function App() {
                 onClick={() => setTab("match")}
                 isActive={tab === "match"}
               />
-              <SidebarBtn
-                icon={<ClipboardList size={20} />}
-                label="Proposal Builder"
-                onClick={() => setTab("proposal")}
-                isActive={tab === "proposal"}
-              />
             </div>
 
             {/* Admin Section */}
@@ -412,10 +434,10 @@ export default function App() {
       )}
 
       {/* MAIN CONTENT */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="min-w-0 flex-1 flex flex-col overflow-hidden">
         {/* TOP BAR */}
-        <div className="bg-white border-b border-[#D8E6E1] px-6 py-4 flex justify-between items-center shadow-sm">
-          <div className="flex items-center gap-4">
+        <div className="bg-white border-b border-[#D8E6E1] px-4 py-3 flex justify-between items-center gap-3 shadow-sm sm:px-6 sm:py-4">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
             <button 
               onClick={() => setSidebarOpen(!sidebarOpen)} 
               className="rounded-lg p-2 text-[#0F172A] hover:bg-[#ECFDF5] transition-colors"
@@ -423,7 +445,7 @@ export default function App() {
             >
               <Menu size={24} />
             </button>
-            <h1 className="text-2xl font-bold text-[#064E3B]">SLP Knowledge Assistant</h1>
+            <h1 className="truncate text-lg font-bold text-[#064E3B] sm:text-2xl">SLP Knowledge Assistant</h1>
           </div>
           <button
             onClick={logout}
@@ -437,7 +459,7 @@ export default function App() {
 
         {/* CONTENT AREA */}
         <div className="flex-1 overflow-auto">
-          <div className="p-8 min-h-full">
+          <div className="min-h-full p-4 sm:p-6 lg:p-8">
             {tab === "dashboard" && (
               <AnalyticsDashboard
                 profile={profile}
@@ -465,7 +487,6 @@ export default function App() {
               />
             )}
             {tab === "match" && <NameMatching />}
-            {tab === "proposal" && <ProposalBuilder />}
             {tab === "admin" && (
               <AdminRoute profile={profile}>
                 <AdminPanel profile={profile} settings={settings} onSettingsChange={setSettings} />

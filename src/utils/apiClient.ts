@@ -1,4 +1,19 @@
-export const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+function resolveApiBaseUrl() {
+  const configured = String(import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+
+  if (typeof window === "undefined") return configured;
+
+  const servedByProductionApi = window.location.port === "3001";
+  const configuredIsLocalhost = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?/i.test(configured);
+  const runningOnLanHost = !/^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
+
+  if (servedByProductionApi) return "";
+  if (runningOnLanHost && configuredIsLocalhost) return "";
+
+  return configured;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 console.log("API_BASE_URL", API_BASE_URL || "(same-origin)");
 

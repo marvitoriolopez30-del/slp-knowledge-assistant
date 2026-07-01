@@ -1,0 +1,25 @@
+{
+  "name": "SLP Knowledge Assistant",
+  "short_name": "SLP Assistant",
+  "description": "Local SLP knowledge workspace for documents, dashboards, matching, and proposal building.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ECFDF5",
+  "theme_color": "#064E3B",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

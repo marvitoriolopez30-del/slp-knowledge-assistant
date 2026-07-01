@@ -1,17 +1,29 @@
 {
-  "name": "react-example",
+  "name": "slp-knowledge-assistant",
   "private": true,
   "version": "0.0.0",
+  "description": "Local SLP Knowledge Assistant desktop and LAN app.",
+  "author": "MVLTORIO",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
     "dev:api": "tsx server.ts",
     "dev:web": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
+    "build:server": "esbuild server.ts --bundle --packages=external --platform=node --format=cjs --target=node22 --outfile=dist-server/server.cjs",
+    "build:desktop": "npm run build && npm run build:server",
+    "electron:dev": "npm run build:desktop && node electron/run-electron.cjs",
+    "electron:build": "npm run dist:win",
+    "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
+    "rebuild:node": "npm rebuild better-sqlite3",
+    "reset-admin": "node scripts/reset-admin.mjs",
+    "dist:win": "npm run build:desktop && npm run rebuild:electron && electron-builder --win nsis && npm run rebuild:node",
+    "pack:win": "npm run build:desktop && npm run rebuild:electron && electron-builder --win dir && npm run rebuild:node",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "start": "node server.ts"
+    "start": "tsx server.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
@@ -55,9 +67,66 @@
     "@types/node": "^22.19.15",
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.2.1",
+    "electron": "^39.8.10",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.27.7",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.4.1"
+  },
+  "build": {
+    "appId": "ph.mvltorio.slp-knowledge-assistant",
+    "productName": "SLP Knowledge Assistant",
+    "copyright": "Copyright © 2026 MVLTORIO",
+    "directories": {
+      "output": "release"
+    },
+    "asar": false,
+    "files": [
+      "dist/**",
+      "dist-server/**",
+      "electron/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "templates",
+        "to": "seed/templates",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "uploads",
+        "to": "seed/uploads",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "server/generated-proposals",
+        "to": "seed/server/generated-proposals",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "slp-local.sqlite",
+        "to": "seed/slp-local.sqlite"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "SLP Knowledge Assistant Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SLP Knowledge Assistant"
+    }
   }
 }

@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">SLP Knowledge Assistant</string>
+    <string name="default_server_url">http://192.168.50.77:3001</string>
+</resources>
