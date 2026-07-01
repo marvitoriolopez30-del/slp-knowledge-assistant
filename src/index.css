@@ -1,0 +1,126 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-primary-dark-green: #064E3B;
+  --color-primary-green: #047857;
+  --color-sidebar-hover: #065F46;
+  --color-accent-emerald: #10B981;
+  --color-soft-mint: #ECFDF5;
+  --color-light-mint: #F0FDF4;
+  --color-gold: #D4AF37;
+  --color-text-dark: #0F172A;
+  --color-text-muted: #64748B;
+  --color-border: #D8E6E1;
+  --color-danger: #DC2626;
+  --color-warning: #F59E0B;
+  --color-info: #2563EB;
+}
+
+body {
+  @apply font-sans text-slate-900 antialiased;
+  background: #F3FAF6;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 rounded-full hover:bg-slate-300 transition-colors;
+}
+
+.prose pre {
+  @apply bg-slate-900 text-slate-100 p-4 rounded-xl overflow-x-auto my-4;
+}
+
+.prose table {
+  @apply w-full text-sm border-separate border-spacing-0 my-4 overflow-hidden rounded-lg;
+}
+
+.prose th {
+  @apply bg-emerald-50 border-b border-slate-200 px-4 py-2 text-left font-bold text-emerald-950;
+}
+
+.prose td {
+  @apply border-b border-slate-100 px-4 py-2 align-top;
+}
+
+.prose p,
+.prose li {
+  @apply leading-7;
+}
+
+button {
+  @apply transition-colors;
+}
+
+button,
+a {
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]/40 focus-visible:ring-offset-2;
+}
+
+button:active,
+a:active {
+  transform: translateY(1px);
+}
+
+table th {
+  @apply text-xs font-bold uppercase tracking-wide;
+}
+
+table td {
+  @apply text-sm align-top;
+}
+
+.slp-table-wrap {
+  @apply overflow-x-auto rounded-lg border border-[#D8E6E1] bg-white shadow-sm;
+}
+
+.slp-table {
+  @apply w-full border-separate border-spacing-0 bg-white text-sm;
+}
+
+.slp-table thead {
+  @apply bg-[#ECFDF5] text-[#064E3B];
+}
+
+.slp-table th {
+  @apply whitespace-nowrap border-b border-[#D8E6E1] px-3 py-3 text-left;
+}
+
+.slp-table td {
+  @apply border-b border-[#E7F0EC] px-3 py-3 text-[#334155];
+}
+
+.slp-table tbody tr:nth-child(even) {
+  @apply bg-[#FAFCFB];
+}
+
+.slp-table tbody tr:hover {
+  @apply bg-[#F0FDF4];
+}
+
+.slp-empty-state {
+  @apply rounded-lg border border-dashed border-[#B9D9CE] bg-[#F8FCFA] p-5 text-center text-sm text-[#64748B];
+}
+
+.slp-skeleton-line {
+  @apply h-3 rounded-full bg-[#D8E6E1];
+  animation: slp-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes slp-pulse {
+  0%, 100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
